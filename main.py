@@ -38,7 +38,7 @@ recipe_info = {
     }
 }
 
-@app.get("/")
+@app.get("/status_check")
 def status_check():
     return "ready"
 
