@@ -76,12 +76,12 @@ def generate_response(order_id_str: str) -> dict:
     
     return response_data
 
-@app.post("/order")
+@app.post("/")
 async def post_order(order: OrderRequest):
     order_id_str = str(order.order_id)
     return generate_response(order_id_str)
 
-@app.get("/order")
+@app.get("/")
 async def get_order(order_id: Union[int, str]):
     order_id_str = str(order_id)
     return generate_response(order_id_str)
