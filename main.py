@@ -6,6 +6,10 @@ import random
 from typing import Union
 from pydantic import BaseModel
 
+# DBからレシピ情報を取得して返す
+import sys
+from db import database as dbmodule
+
 app = FastAPI()
 
 # CORS設定: React(Vite)のデフォルトポート8080を許可
@@ -86,9 +90,7 @@ def status_check():
 def status_check():
     return "ready"
 
-# DBからレシピ情報を取得して返す
-import sys
-from db import database as dbmodule
+
 
 def generate_response(order_id_str: str) -> dict:
     # DBから取得
