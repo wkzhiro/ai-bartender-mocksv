@@ -213,7 +213,7 @@ class RecipeItem(BaseModel):
 class CreateCocktailRequest(BaseModel):
     recent_event: str
     event_name: str
-    name: str
+    name: str = ""
     career: str
     hobby: str
     prompt: str = ""  # 画像生成用プロンプト（省略可）
