@@ -5,6 +5,8 @@ import base64
 import random
 from typing import Union
 from pydantic import BaseModel
+from PIL import Image
+import io
 
 # DBからレシピ情報を取得して返す
 import sys
@@ -353,6 +355,37 @@ async def create_cocktail(req: CreateCocktailRequest):
     if not image_base64:
         return CreateCocktailResponse(result="error", detail="画像生成APIレスポンス異常: " + str(result_img))
     image_base64 = f"data:image/png;base64,{image_base64}"
+
+    # === 画像を中央クロップ＆リサイズ（720x1080） ===
+    def crop_and_resize_base64_image(base64_str: str, target_width: int = 720, target_height: int = 1080) -> str:
+        # base64ヘッダー除去
+        if "," in base64_str:
+            base64_str = base64_str.split(",")[1]
+        img_bytes = base64.b64decode(base64_str)
+        with Image.open(io.BytesIO(img_bytes)) as img:
+            src_width, src_height = img.size
+            target_aspect = target_width / target_height
+            src_aspect = src_width / src_height
+
+            # クロップ範囲計算
+            if src_aspect > target_aspect:
+                # 横長→左右をカット
+                new_width = int(src_height * target_aspect)
+                left = (src_width - new_width) // 2
+                box = (left, 0, left + new_width, src_height)
+            else:
+                # 縦長→上下をカット
+                new_height = int(src_width / target_aspect)
+                top = (src_height - new_height) // 2
+                box = (0, top, src_width, top + new_height)
+            img_cropped = img.crop(box)
+            img_resized = img_cropped.resize((target_width, target_height), Image.LANCZOS)
+            buf = io.BytesIO()
+            img_resized.save(buf, format="PNG")
+            b64_png = base64.b64encode(buf.getvalue()).decode("utf-8")
+            return f"data:image/png;base64,{b64_png}"
+
+    image_base64 = crop_and_resize_base64_image(image_base64, 720, 1080)
 
     # 3. order_idを6桁ランダムで生成（重複チェック付き）
     import random

@@ -4,3 +4,5 @@ python-dotenv
 sqlalchemy
 mysql-connector-python
 fastapi
+Pillow
+openai

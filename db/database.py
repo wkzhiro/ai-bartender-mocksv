@@ -12,10 +12,10 @@ DB_PASSWORD = os.getenv("DB_PASSWORD")
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = os.getenv("DB_PORT", "3306")
 DB_NAME = os.getenv("DB_NAME")
-print(DB_USER,DB_PASSWORD, DB_HOST,DB_PORT, DB_NAME)
+# print(DB_USER,DB_PASSWORD, DB_HOST,DB_PORT, DB_NAME)
 
 DATABASE_URL = f'mysql+mysqlconnector://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}'
-print("DATABASE_URL:", DATABASE_URL) 
+# print("DATABASE_URL:", DATABASE_URL) 
 
 engine = create_engine(DATABASE_URL, echo=True, future=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
