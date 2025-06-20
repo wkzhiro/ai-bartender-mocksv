@@ -27,10 +27,6 @@ class SaveCocktailRequest(BaseModel):
     status: int = 200
     name: str
     image: str
-    flavor_ratio1: str
-    flavor_ratio2: str
-    flavor_ratio3: str
-    flavor_ratio4: str
     comment: str
     recent_event: str = ""
     event_name: str = ""
@@ -168,35 +164,8 @@ async def get_order(order_id: Union[int, str]):
 
 from datetime import datetime
 
-@app.post("/cocktail/")
-async def save_cocktail(req: SaveCocktailRequest):
-    from db import database as dbmodule
-    db_data = req.dict()
-    print("=== /cocktail/ 受信データ ===")
-    print(db_data)
-    try:
-        inserted_id = dbmodule.insert_cocktail(db_data)
-        print(f"insert_cocktailの返り値: {inserted_id}")
-        # 保存後、最新レコードを取得してprint
-        if inserted_id:
-            latest = dbmodule.get_cocktail_by_order_id(db_data["order_id"])
-            print("=== DB最新レコード ===")
-            print({
-                "id": latest.id,
-                "order_id": latest.order_id,
-                "name": latest.name,
-                "created_at": latest.created_at,
-                "comment": latest.comment,
-            })
-            return {"result": "success", "id": str(inserted_id)}
-        else:
-            print("DB insert failed")
-            return {"result": "error", "detail": "DB insert failed"}
-    except Exception as e:
-        import traceback
-        tb = traceback.format_exc()
-        print("DB保存例外:", tb)
-        return {"result": "error", "detail": f"{e}\n{tb}"}
+
+# （save_cocktailエンドポイントは削除しました）
 
 @app.post("/delivery/")
 async def order_(deriver: DeriveryRequest):
@@ -228,3 +197,212 @@ async def order_(deriver: DeriveryRequest):
         import traceback
         tb = traceback.format_exc()
         return {"result": "error", "detail": f"{e}\n{tb}"}
+
+# === ここから追加 ===
+
+# レシピ生成・画像生成・DB保存を統合するAPI
+import os
+import openai
+
+class RecipeItem(BaseModel):
+    syrup: str
+    ratio: str
+
+class CreateCocktailRequest(BaseModel):
+    recent_event: str
+    event_name: str
+    name: str
+    career: str
+    hobby: str
+    prompt: str = ""  # 画像生成用プロンプト（省略可）
+
+class CreateCocktailResponse(BaseModel):
+    result: str
+    id: str = ""
+    cocktail_name: str = ""
+    concept: str = ""
+    color: str = ""
+    recipe: list[RecipeItem] = []
+    image_base64: str = ""
+    detail: str = ""
+
+def load_syrup_info_txt(path="storage/syrup.txt"):
+    syrup_dict = {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = f.read().splitlines()
+        names = ["ベリー", "青りんご", "シトラス", "ホワイト"]
+        descs = []
+        color_map = {}
+        for name in names:
+            for i, line in enumerate(lines):
+                if line.strip() == name:
+                    desc = lines[i+1] if i+1 < len(lines) else ""
+                    descs.append(desc)
+                    color = ""
+                    if "The color is" in desc:
+                        color = desc.split("The color is")[-1].strip().replace(".", "")
+                    elif "The color is" in lines[i+1]:
+                        color = lines[i+1].split("The color is")[-1].strip().replace(".", "")
+                    color_map[name] = color
+        for i, name in enumerate(names):
+            syrup_dict[name] = {"desc": descs[i] if i < len(descs) else "", "color": color_map.get(name, "")}
+    except Exception as e:
+        print(f"syrup.txtの読み込みエラー: {e}")
+    return syrup_dict
+
+def build_recipe_system_prompt(syrup_dict):
+    syrupDesc = "\n".join([f"{k}: {v['desc']}（色: {v['color']}）" for k, v in syrup_dict.items()])
+    systemPrompt = (
+        "あなたはプロのバーテンダーです。"
+        "以下のシロップ情報を参考に、入力された情報からカクテル風の名前（日本語で20文字以内）、"
+        "そのカクテルのコンセプト文（日本語で1文）、およびレシピ（シロップ名と比率のリスト、合計25%以内、色や味のイメージに合うように最大4種まで混ぜてOK）を考えてください。"
+        "生成AIで画像を生成するための色を表現する文章も考えてください。"
+        "以下に記載するシロップの情報を元に、必ず上記の色の表現に合うようにシロップ比率を考えてください。"
+        "シロップのホワイトは0~10%で混ぜるようにしてください。また、出力は必ず次のJSON形式で返してください。"
+        "0％でも、ベリー、青りんご、シトラス、ホワイトの4つの配合はそれぞれ示すようにしてください。"
+        "```json\n"
+        "{\n"
+        "  \"cocktail_name\": \"...\",\n"
+        "  \"concept\": \"...\",\n"
+        "  \"color\": \"...\",\n"
+        "  \"recipe\": [\n"
+        "    {\"syrup\": \"ベリー\", \"ratio\": \"15%\"},\n"
+        "    {\"syrup\": \"青りんご\", \"ratio\": \"10%\"},\n"
+        "    {\"syrup\": \"シトラス\", \"ratio\": \"0％\"},\n"
+        "    {\"syrup\": \"ホワイト\", \"ratio\": \"10%\"}\n"
+        "  ]\n"
+        "}\n"
+        "```"
+        "\n\n[シロップ情報]\n" + syrupDesc
+    )
+    return systemPrompt
+
+
+@app.post("/cocktail/", response_model=CreateCocktailResponse)
+async def create_cocktail(req: CreateCocktailRequest):
+    # 1. レシピ生成
+    syrup_dict = load_syrup_info_txt()
+    systemPrompt = build_recipe_system_prompt(syrup_dict)
+    userPrompt = (
+        f"最近の出来事: {req.recent_event}\n"
+        f"イベント名: {req.event_name}\n"
+        f"名前: {req.name}\n"
+        f"キャリア: {req.career}\n"
+        f"趣味: {req.hobby}"
+    )
+    api_key = os.environ.get("AZURE_OPENAI_API_KEY_LLM") or os.environ.get("OPENAI_API_KEY")
+    endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT_LLM")
+    deployment_id = "gpt-4.1"
+    if not api_key or not endpoint:
+        return CreateCocktailResponse(result="error", detail="OpenAI APIキーまたはエンドポイントが設定されていません。")
+    url = f"{endpoint}/openai/deployments/{deployment_id}/chat/completions?api-version=2023-12-01-preview"
+    import requests
+    headers = {
+        "api-key": api_key,
+        "Content-Type": "application/json"
+    }
+    body = {
+        "messages": [
+            {"role": "system", "content": systemPrompt},
+            {"role": "user", "content": userPrompt}
+        ],
+        "max_tokens": 400,
+        "temperature": 0.7
+    }
+    res = requests.post(url, headers=headers, json=body)
+    if not res.ok:
+        return CreateCocktailResponse(result="error", detail="OpenAI API通信エラー")
+    result = res.json()
+    content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+    import re
+    jsonMatch = re.search(r"\{[\s\S]+\}", content)
+    if not jsonMatch:
+        return CreateCocktailResponse(result="error", detail="ChatGPT出力からJSONが抽出できませんでした: " + content)
+    import json as pyjson
+    data = pyjson.loads(jsonMatch.group(0))
+    recipe = data.get("recipe", [])
+    cocktail_name = data.get("cocktail_name", "")
+    concept = data.get("concept", "")
+    color = data.get("color", "")
+
+    # 2. 画像生成
+    prompt_full = (
+        f"{color}のカクテル。{concept}。{req.prompt}。背景は完全な透明（透過PNG）、カクテル以外は描かず、カクテルそのものだけをリアルな質感の写真風イラストとして生成してください。"
+    )
+    api_key_img = os.environ.get("GPT_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    if not api_key_img:
+        return CreateCocktailResponse(result="error", detail="gpt-image APIキー(GPT_API_KEY)が設定されていません。")
+    clientUrl = "https://api.openai.com/v1/images/generations"
+    headers_img = {
+        "Authorization": f"Bearer {api_key_img}",
+        "Content-Type": "application/json"
+    }
+    body_img = {
+        "model": "gpt-image-1",
+        "prompt": prompt_full,
+        "size": "1024x1536",
+        "quality": "low",
+    }
+    res_img = requests.post(clientUrl, headers=headers_img, json=body_img)
+    if not res_img.ok:
+        errorText = res_img.text
+        return CreateCocktailResponse(result="error", detail="gpt-image API通信エラー: " + errorText)
+    result_img = res_img.json()
+    image_base64 = result_img.get("data", [{}])[0].get("b64_json", "")
+    if not image_base64:
+        return CreateCocktailResponse(result="error", detail="画像生成APIレスポンス異常: " + str(result_img))
+    image_base64 = f"data:image/png;base64,{image_base64}"
+
+    # 3. order_idを6桁ランダムで生成（重複チェック付き）
+    import random
+    max_attempts = 10
+    for _ in range(max_attempts):
+        order_id = str(random.randint(100000, 999999))
+        # DBに同じorder_idが存在しないかチェック
+        if not dbmodule.get_cocktail_by_order_id(order_id):
+            break
+    else:
+        return CreateCocktailResponse(result="error", detail="注文番号の重複が解消できませんでした。")
+
+    # 4. DB保存
+    db_data = {
+        "order_id": order_id,
+        "status": 200,
+        "name": cocktail_name,
+        "image": image_base64,
+        "comment": concept,
+        "recent_event": req.recent_event,
+        "event_name": req.event_name,
+        "user_name": req.name,
+        "career": req.career,
+        "hobby": req.hobby,
+    }
+    try:
+        inserted_id = dbmodule.insert_cocktail(db_data)
+        if not inserted_id:
+            # 失敗時のデバッグ情報を出力
+            print("DB insert failed")
+            print("db_data:", db_data)
+            return CreateCocktailResponse(
+                result="error",
+                detail=f"DB insert failed. db_data={db_data}, inserted_id={inserted_id}"
+            )
+        return CreateCocktailResponse(
+            result="success",
+            id=str(order_id),
+            cocktail_name=cocktail_name,
+            concept=concept,
+            color=color,
+            recipe=[RecipeItem(**item) for item in recipe],
+            image_base64=image_base64,
+            detail="",
+        )
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print("DB insert exception:", tb)
+        print("db_data:", db_data)
+        return CreateCocktailResponse(result="error", detail=f"{e}\n{tb}\ndb_data={db_data}")
+
+# === ここまで追加 ===

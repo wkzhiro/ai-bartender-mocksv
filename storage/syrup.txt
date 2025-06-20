@@ -1,0 +1,9 @@
+The features of syrup are as follows and should be used to create prompts.
+ベリー
+Slightly sweet with mild acidity. Features a refreshing sparkling wine flavor, bright raspberry aroma, and a crisp citrus finish. The color is Berry red.
+青りんご
+Slightly sweet with gentle acidity. Highlights crisp gin notes, complemented by fresh apple aroma and a refreshing citrus finish. The color is light blue.
+シトラス
+Moderately sweet with pronounced acidity, featuring crisp gin flavors, vibrant grapefruit aroma, and pleasantly bitter citrus notes. The color is yellow.
+ホワイト
+Mildly sweet with gentle acidity, characterized by deep, mellow black tea notes and a refined, aromatic finish. The color is white.
