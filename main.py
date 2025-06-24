@@ -217,6 +217,7 @@ class CreateCocktailRequest(BaseModel):
     career: str
     hobby: str
     prompt: str = ""  # 画像生成用プロンプト（省略可）
+    save_user_info: bool = True  # ユーザー情報を保存するかどうか（デフォルトTrue）
 
 class CreateCocktailResponse(BaseModel):
     result: str
@@ -399,17 +400,31 @@ async def create_cocktail(req: CreateCocktailRequest):
         return CreateCocktailResponse(result="error", detail="注文番号の重複が解消できませんでした。")
 
     # 4. DB保存
+    # save_user_infoがFalseの時のみユーザー情報を空文字で保存
+    if hasattr(req, "save_user_info") and req.save_user_info is False:
+        recent_event = ""
+        event_name = ""
+        user_name = ""
+        career = ""
+        hobby = ""
+    else:
+        recent_event = req.recent_event
+        event_name = req.event_name
+        user_name = req.name
+        career = req.career
+        hobby = req.hobby
+
     db_data = {
         "order_id": order_id,
         "status": 200,
         "name": cocktail_name,
         "image": image_base64,
         "comment": concept,
-        "recent_event": req.recent_event,
-        "event_name": req.event_name,
-        "user_name": req.name,
-        "career": req.career,
-        "hobby": req.hobby,
+        "recent_event": recent_event,
+        "event_name": event_name,
+        "user_name": user_name,
+        "career": career,
+        "hobby": hobby,
     }
     try:
         inserted_id = dbmodule.insert_cocktail(db_data)
