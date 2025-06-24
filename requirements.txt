@@ -5,6 +5,7 @@ fastapi
 Pillow
 openai
 supabase
+sqlalchemy
 
 # 旧MySQL関連（Supabase移行後は削除可能）
 # sqlalchemy

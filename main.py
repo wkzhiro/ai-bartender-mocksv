@@ -530,6 +530,11 @@ async def _create_cocktail_internal(req: CreateCocktailRequest, save_user_info: 
                 result="error",
                 detail=f"DB insert failed. db_data={db_data}, inserted_id={inserted_id}"
             )
+        # use_storageのときはimage_base64にURLを返す
+        if use_storage:
+            image_base64_value = image_data  # URL
+        else:
+            image_base64_value = image_base64  # base64
         return CreateCocktailResponse(
             result="success",
             id=str(order_id),
@@ -537,7 +542,7 @@ async def _create_cocktail_internal(req: CreateCocktailRequest, save_user_info: 
             concept=concept,
             color=color,
             recipe=[RecipeItem(**item) for item in recipe],
-            image_base64=image_base64,
+            image_base64=image_base64_value,
             detail="",
         )
     except Exception as e:
