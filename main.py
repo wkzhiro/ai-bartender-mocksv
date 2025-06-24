@@ -9,7 +9,7 @@ from PIL import Image
 import io
 
 # SupabaseのDBモジュールを使用
-from db import supabase_database as dbmodule
+from db import database as dbmodule
 from db.supabase_client import supabase_client
 
 app = FastAPI()
