@@ -8,9 +8,9 @@ from pydantic import BaseModel
 from PIL import Image
 import io
 
-# DBからレシピ情報を取得して返す
-import sys
-from db import database as dbmodule
+# SupabaseのDBモジュールを使用
+from db import supabase_database as dbmodule
+from db.supabase_client import supabase_client
 
 app = FastAPI()
 
@@ -88,30 +88,28 @@ def status_check():
 def status_check():
     return "ready"
 
-
-
 def generate_response(order_id_str: str) -> dict:
-    # DBから取得
-    cocktail = dbmodule.get_cocktail_by_order_id(order_id_str)
-    if not cocktail:
+    # Supabaseから取得
+    cocktail_data = dbmodule.get_cocktail_by_order_id(order_id_str)
+    if not cocktail_data:
         raise HTTPException(status_code=404, detail="注文番号が無効です。")
 
     # 画像はDBのbase64をそのまま返す
-    encoded_image = cocktail.image
+    encoded_image = cocktail_data.get('image', '')
 
     response_data = {
-        "status": cocktail.status if cocktail.status is not None else 200,
-        "name": cocktail.name,
+        "status": cocktail_data.get('status', 200),
+        "name": cocktail_data.get('name', ''),
         "image": encoded_image,
         "flavor_name1": "ベリー",
-        "flavor_ratio1": cocktail.flavor_ratio1,
+        "flavor_ratio1": cocktail_data.get('flavor_ratio1', ''),
         "flavor_name2": "青りんご",
-        "flavor_ratio2": cocktail.flavor_ratio2,
+        "flavor_ratio2": cocktail_data.get('flavor_ratio2', ''),
         "flavor_name3": "シトラス",
-        "flavor_ratio3": cocktail.flavor_ratio3,
+        "flavor_ratio3": cocktail_data.get('flavor_ratio3', ''),
         "flavor_name4": "ホワイト",
-        "flavor_ratio4": cocktail.flavor_ratio4,
-        "comment": cocktail.comment
+        "flavor_ratio4": cocktail_data.get('flavor_ratio4', ''),
+        "comment": cocktail_data.get('comment', '')
     }
     return response_data
 
@@ -133,31 +131,31 @@ async def get_order(order_id: Union[int, str]):
     order_id_str = str(order_id)
     if order_id_str == "all":
         # 全件取得
-        cocktails = dbmodule.SessionLocal().query(dbmodule.Cocktail).order_by(dbmodule.Cocktail.created_at.desc()).all()
+        cocktails = dbmodule.get_all_cocktails()
         result = []
         for c in cocktails:
             # recipe配列を生成
             recipe = [
-                {"syrup": "ベリー", "ratio": c.flavor_ratio1},
-                {"syrup": "青りんご", "ratio": c.flavor_ratio2},
-                {"syrup": "シトラス", "ratio": c.flavor_ratio3},
-                {"syrup": "ホワイト", "ratio": c.flavor_ratio4},
+                {"syrup": "ベリー", "ratio": c.get('flavor_ratio1', '')},
+                {"syrup": "青りんご", "ratio": c.get('flavor_ratio2', '')},
+                {"syrup": "シトラス", "ratio": c.get('flavor_ratio3', '')},
+                {"syrup": "ホワイト", "ratio": c.get('flavor_ratio4', '')},
             ]
             result.append({
-                "order_id": c.order_id,
-                "name": c.name,
-                "concept": c.comment,
-                "image_base64": c.image,
-                "flavor_ratio1": c.flavor_ratio1,
-                "flavor_ratio2": c.flavor_ratio2,
-                "flavor_ratio3": c.flavor_ratio3,
-                "flavor_ratio4": c.flavor_ratio4,
-                "recent_event": getattr(c, "recent_event", ""),
-                "event_name": getattr(c, "event_name", ""),
-                "user_name": getattr(c, "user_name", ""),
-                "career": getattr(c, "career", ""),
-                "hobby": getattr(c, "hobby", ""),
-                "created_at": c.created_at.isoformat() if c.created_at else "",
+                "order_id": c.get('order_id', ''),
+                "name": c.get('name', ''),
+                "concept": c.get('comment', ''),
+                "image_base64": c.get('image', ''),
+                "flavor_ratio1": c.get('flavor_ratio1', ''),
+                "flavor_ratio2": c.get('flavor_ratio2', ''),
+                "flavor_ratio3": c.get('flavor_ratio3', ''),
+                "flavor_ratio4": c.get('flavor_ratio4', ''),
+                "recent_event": c.get('recent_event', ''),
+                "event_name": c.get('event_name', ''),
+                "user_name": c.get('user_name', ''),
+                "career": c.get('career', ''),
+                "hobby": c.get('hobby', ''),
+                "created_at": c.get('created_at', ''),
                 "recipe": recipe,
             })
         return result
@@ -165,9 +163,6 @@ async def get_order(order_id: Union[int, str]):
         return generate_response(order_id_str)
 
 from datetime import datetime
-
-
-# （save_cocktailエンドポイントは削除しました）
 
 @app.post("/delivery/")
 async def order_(deriver: DeriveryRequest):
@@ -219,6 +214,14 @@ class CreateCocktailRequest(BaseModel):
     prompt: str = ""  # 画像生成用プロンプト（省略可）
     save_user_info: bool = True  # ユーザー情報を保存するかどうか（デフォルトTrue）
 
+class CreateCocktailAnonymousRequest(BaseModel):
+    recent_event: str
+    event_name: str
+    name: str = ""
+    career: str
+    hobby: str
+    prompt: str = ""  # 画像生成用プロンプト（省略可）
+
 class CreateCocktailResponse(BaseModel):
     result: str
     id: str = ""
@@ -254,6 +257,53 @@ def load_syrup_info_txt(path="storage/syrup.txt"):
         print(f"syrup.txtの読み込みエラー: {e}")
     return syrup_dict
 
+def upload_image_to_storage(image_base64: str, order_id: str) -> str:
+    """画像をSupabase Storageにアップロードし、公開URLを返す"""
+    try:
+        # base64から画像データを抽出
+        if "," in image_base64:
+            image_data = base64.b64decode(image_base64.split(",")[1])
+        else:
+            image_data = base64.b64decode(image_base64)
+        
+        # ファイル名を生成
+        file_name = f"cocktails/{order_id}.png"
+        
+        # バケットが存在するか確認・作成
+        try:
+            buckets = supabase_client.client.storage.list_buckets()
+            bucket_exists = any(getattr(bucket, 'name', None) == 'cocktail-images' for bucket in buckets)
+            if not bucket_exists:
+                # public引数を削除してバケット作成
+                supabase_client.client.storage.create_bucket('cocktail-images')
+                print("cocktail-imagesバケットを作成しました")
+        except Exception as bucket_error:
+            print(f"バケット確認/作成エラー: {bucket_error}")
+
+        # バケット作成後、バケットが存在するか再確認
+        buckets = supabase_client.client.storage.list_buckets()
+        bucket_exists = any(getattr(bucket, 'name', None) == 'cocktail-images' for bucket in buckets)
+        if not bucket_exists:
+            print("バケット作成に失敗しました")
+            return image_base64
+
+        # Supabase Storageにアップロード
+        result = supabase_client.client.storage.from_("cocktail-images").upload(
+            file_name, 
+            image_data,
+            {"content-type": "image/png"}
+        )
+
+        # 公開URLを取得
+        public_url = supabase_client.client.storage.from_("cocktail-images").get_public_url(file_name)
+        print(f"画像アップロード成功: {public_url}")
+        return public_url
+
+    except Exception as e:
+        print(f"画像アップロードエラー: {e}")
+        # アップロードに失敗した場合はbase64をそのまま返す
+        return image_base64
+
 def build_recipe_system_prompt(syrup_dict):
     syrupDesc = "\n".join([f"{k}: {v['desc']}（色: {v['color']}）" for k, v in syrup_dict.items()])
     systemPrompt = (
@@ -281,9 +331,27 @@ def build_recipe_system_prompt(syrup_dict):
     )
     return systemPrompt
 
-
 @app.post("/cocktail/", response_model=CreateCocktailResponse)
 async def create_cocktail(req: CreateCocktailRequest):
+    """カクテル作成（ユーザー情報を保存、画像はbase64でDB保存）"""
+    return await _create_cocktail_internal(req, save_user_info=req.save_user_info, use_storage=False)
+
+@app.post("/cocktail/anonymous/", response_model=CreateCocktailResponse)
+async def create_cocktail_anonymous(req: CreateCocktailAnonymousRequest):
+    """カクテル作成（ユーザー情報を保存しない、画像はStorageに保存）"""
+    # CreateCocktailRequestと同じ形式に変換（全ての情報を使ってレシピ生成）
+    full_req = CreateCocktailRequest(
+        recent_event=req.recent_event,
+        event_name=req.event_name,
+        name=req.name,
+        career=req.career,
+        hobby=req.hobby,
+        prompt=req.prompt,
+        save_user_info=False
+    )
+    return await _create_cocktail_internal(full_req, save_user_info=False, use_storage=True)
+
+async def _create_cocktail_internal(req: CreateCocktailRequest, save_user_info: bool = True, use_storage: bool = False):
     # 1. レシピ生成
     syrup_dict = load_syrup_info_txt()
     systemPrompt = build_recipe_system_prompt(syrup_dict)
@@ -328,6 +396,17 @@ async def create_cocktail(req: CreateCocktailRequest):
     cocktail_name = data.get("cocktail_name", "")
     concept = data.get("concept", "")
     color = data.get("color", "")
+
+    # 3. order_idを6桁ランダムで生成（重複チェック付き）
+    import random
+    max_attempts = 10
+    for _ in range(max_attempts):
+        order_id = str(random.randint(100000, 999999))
+        # DBに同じorder_idが存在しないかチェック
+        if not dbmodule.get_cocktail_by_order_id(order_id):
+            break
+    else:
+        return CreateCocktailResponse(result="error", detail="注文番号の重複が解消できませんでした。")
 
     # 2. 画像生成
     prompt_full = (
@@ -387,21 +466,18 @@ async def create_cocktail(req: CreateCocktailRequest):
             return f"data:image/png;base64,{b64_png}"
 
     image_base64 = crop_and_resize_base64_image(image_base64, 720, 1080)
-
-    # 3. order_idを6桁ランダムで生成（重複チェック付き）
-    import random
-    max_attempts = 10
-    for _ in range(max_attempts):
-        order_id = str(random.randint(100000, 999999))
-        # DBに同じorder_idが存在しないかチェック
-        if not dbmodule.get_cocktail_by_order_id(order_id):
-            break
+    
+    # 画像保存方法の分岐
+    if use_storage:
+        # Supabase Storageに画像をアップロード
+        image_data = upload_image_to_storage(image_base64, order_id)
     else:
-        return CreateCocktailResponse(result="error", detail="注文番号の重複が解消できませんでした。")
+        # base64エンコードをそのまま使用
+        image_data = image_base64
 
     # 4. DB保存
-    # save_user_infoがFalseの時のみユーザー情報を空文字で保存
-    if hasattr(req, "save_user_info") and req.save_user_info is False:
+    # save_user_infoがFalseの時はユーザー情報を空文字で保存
+    if not save_user_info:
         recent_event = ""
         event_name = ""
         user_name = ""
@@ -414,11 +490,29 @@ async def create_cocktail(req: CreateCocktailRequest):
         career = req.career
         hobby = req.hobby
 
+    # レシピから各比率を抽出
+    flavor_ratios = ["0%", "0%", "0%", "0%"]
+    for item in recipe:
+        syrup = item.get("syrup", "")
+        ratio = item.get("ratio", "0%")
+        if syrup == "ベリー":
+            flavor_ratios[0] = ratio
+        elif syrup == "青りんご":
+            flavor_ratios[1] = ratio
+        elif syrup == "シトラス":
+            flavor_ratios[2] = ratio
+        elif syrup == "ホワイト":
+            flavor_ratios[3] = ratio
+
     db_data = {
         "order_id": order_id,
         "status": 200,
         "name": cocktail_name,
-        "image": image_base64,
+        "image": image_data,
+        "flavor_ratio1": flavor_ratios[0],
+        "flavor_ratio2": flavor_ratios[1],
+        "flavor_ratio3": flavor_ratios[2],
+        "flavor_ratio4": flavor_ratios[3],
         "comment": concept,
         "recent_event": recent_event,
         "event_name": event_name,

@@ -1,8 +1,11 @@
 uvicorn
 requests
 python-dotenv
-sqlalchemy
-mysql-connector-python
 fastapi
 Pillow
 openai
+supabase
+
+# 旧MySQL関連（Supabase移行後は削除可能）
+# sqlalchemy
+# mysql-connector-python

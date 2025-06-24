@@ -1,4 +1,7 @@
 *vscode
 .devcontainer
-.env
+.env*
 venv
+README_supabase_migration.md
+migration_env
+__pycache__
