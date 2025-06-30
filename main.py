@@ -337,6 +337,7 @@ def build_recipe_system_prompt(syrup_dict):
 @app.post("/cocktail/", response_model=CreateCocktailResponse)
 async def create_cocktail(req: CreateCocktailRequest):
     """カクテル作成（ユーザー情報を保存、画像はbase64でDB保存）"""
+    print("post request")
     return await _create_cocktail_internal(req, save_user_info=req.save_user_info, use_storage=False)
 
 @app.post("/cocktail/anonymous/", response_model=CreateCocktailResponse)
