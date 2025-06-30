@@ -314,14 +314,12 @@ def build_recipe_system_prompt(syrup_dict):
         "以下に記載するシロップの情報を元に、必ず上記のメインカラーの表現に合うようにシロップ比率を考えてください。"
         "シロップのホワイトは0~10%で混ぜるようにしてください。また、出力は必ず次のJSON形式で返してください。"
         "0％でも、ベリー、青りんご、シトラス、ホワイトの4つの配合はそれぞれ示すようにしてください。"
+        "colorはstring型（例: \"春の陽だまりのような黄色（(246, 236, 55)）\"）で返してください。"
         "```json\\n"
             "{\n"
             "  \"cocktail_name\": \"...\",\n"
             "  \"concept\": \"...\",\n"
-            "  \"color\": {\n"
-            "    \"description\": \"...\",\n"
-            "    \"target_rgb\": \"(R,G,B)\"\n"
-            "  },\n"
+            "  \"color\": \"春の陽だまりのような黄色（(246, 236, 55)）\",\n"
             "  \"recipe\": [\n"
             "    {\"syrup\": \"ベリー\", \"ratio\": \"15%\"},\n"
             "    {\"syrup\": \"青りんご\", \"ratio\": \"10%\"},\n"
@@ -337,7 +335,7 @@ def build_recipe_system_prompt(syrup_dict):
 @app.post("/cocktail/", response_model=CreateCocktailResponse)
 async def create_cocktail(req: CreateCocktailRequest):
     """カクテル作成（ユーザー情報を保存、画像はbase64でDB保存）"""
-    print("post request")
+    print("post request / test")
     return await _create_cocktail_internal(req, save_user_info=req.save_user_info, use_storage=False)
 
 @app.post("/cocktail/anonymous/", response_model=CreateCocktailResponse)
@@ -533,7 +531,7 @@ async def _create_cocktail_internal(req: CreateCocktailRequest, save_user_info: 
         if not inserted_id:
             # 失敗時のデバッグ情報を出力
             print("DB insert failed")
-            print("db_data:", db_data)
+            # print("db_data:", db_data)
             return CreateCocktailResponse(
                 result="error",
                 detail=f"DB insert failed. db_data={db_data}, inserted_id={inserted_id}"
@@ -556,8 +554,8 @@ async def _create_cocktail_internal(req: CreateCocktailRequest, save_user_info: 
     except Exception as e:
         import traceback
         tb = traceback.format_exc()
-        print("DB insert exception:", tb)
-        print("db_data:", db_data)
+        # print("DB insert exception:", tb)
+        # print("db_data:", db_data)
         return CreateCocktailResponse(result="error", detail=f"{e}\n{tb}\ndb_data={db_data}")
 
 # === ここまで追加 ===
