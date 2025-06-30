@@ -1,9 +1,10 @@
-The features of syrup are as follows and should be used to create prompts.
+The features of each syrup are as follows and should be used to create prompts.
+All colors refer to the appearance when placed in a clear PET bottle against a white background. The liquid is transparent except for White, which appears cloudy.
 ベリー
-Slightly sweet with mild acidity. Features a refreshing sparkling wine flavor, bright raspberry aroma, and a crisp citrus finish. The color is Berry red.
+Slightly sweet with mild acidity. Features a refreshing sparkling wine flavor, bright raspberry aroma, and a crisp citrus finish. The color is berry red (RGB 188, 56, 0) with transparency.
 青りんご
-Slightly sweet with gentle acidity. Highlights crisp gin notes, complemented by fresh apple aroma and a refreshing citrus finish. The color is light blue.
+Slightly sweet with gentle acidity. Highlights crisp gin notes, complemented by fresh apple aroma and a refreshing citrus finish. The color is green apple blue-green (RGB 92, 105, 96) with transparency.
 シトラス
-Moderately sweet with pronounced acidity, featuring crisp gin flavors, vibrant grapefruit aroma, and pleasantly bitter citrus notes. The color is yellow.
+Moderately sweet with pronounced acidity, featuring crisp gin flavors, vibrant grapefruit aroma, and pleasantly bitter citrus notes. The color is citrus yellow (RGB 254, 246, 0) with transparency.
 ホワイト
-Mildly sweet with gentle acidity, characterized by deep, mellow black tea notes and a refined, aromatic finish. The color is white.
+Mildly sweet with gentle acidity, characterized by deep, mellow black tea notes and a refined, aromatic finish. The color is white (RGB 222, 214, 193) and appears cloudy.

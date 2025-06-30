@@ -309,25 +309,28 @@ def build_recipe_system_prompt(syrup_dict):
     systemPrompt = (
         "あなたはプロのバーテンダーです。"
         "以下のシロップ情報を参考に、入力された情報からカクテル風の名前（日本語で20文字以内）、"
-        "そのカクテルのコンセプト文（日本語で1文）、およびレシピ（シロップ名と比率のリスト、合計25%以内、色や味のイメージに合うように最大4種まで混ぜてOK）を考えてください。"
-        "生成AIで画像を生成するための色を表現する文章も考えてください。"
-        "以下に記載するシロップの情報を元に、必ず上記の色の表現に合うようにシロップ比率を考えてください。"
+        "そのカクテルのコンセプト文（日本語で1文）、生成AIでカクテルの画像を生成するためのメインカラー（液体の色）を表現する文章とメインカラーのRGB値、およびレシピ（シロップ名と比率のリスト、合計25%以内、色や味のイメージに合うように最大4種まで混ぜてOK）を考えてください。"
+        "メインカラーは、4種のシロップの任意の比率での混合で作成できる色にしてください。"
+        "以下に記載するシロップの情報を元に、必ず上記のメインカラーの表現に合うようにシロップ比率を考えてください。"
         "シロップのホワイトは0~10%で混ぜるようにしてください。また、出力は必ず次のJSON形式で返してください。"
         "0％でも、ベリー、青りんご、シトラス、ホワイトの4つの配合はそれぞれ示すようにしてください。"
-        "```json\n"
-        "{\n"
-        "  \"cocktail_name\": \"...\",\n"
-        "  \"concept\": \"...\",\n"
-        "  \"color\": \"...\",\n"
-        "  \"recipe\": [\n"
-        "    {\"syrup\": \"ベリー\", \"ratio\": \"15%\"},\n"
-        "    {\"syrup\": \"青りんご\", \"ratio\": \"10%\"},\n"
-        "    {\"syrup\": \"シトラス\", \"ratio\": \"0％\"},\n"
-        "    {\"syrup\": \"ホワイト\", \"ratio\": \"10%\"}\n"
-        "  ]\n"
-        "}\n"
+        "```json\\n"
+            "{\n"
+            "  \"cocktail_name\": \"...\",\n"
+            "  \"concept\": \"...\",\n"
+            "  \"color\": {\n"
+            "    \"description\": \"...\",\n"
+            "    \"target_rgb\": \"(R,G,B)\"\n"
+            "  },\n"
+            "  \"recipe\": [\n"
+            "    {\"syrup\": \"ベリー\", \"ratio\": \"15%\"},\n"
+            "    {\"syrup\": \"青りんご\", \"ratio\": \"10%\"},\n"
+            "    {\"syrup\": \"シトラス\", \"ratio\": \"0%\"},\n"
+            "    {\"syrup\": \"ホワイト\", \"ratio\": \"10%\"}\n"
+            "  ]\n"
+            "}\n"
         "```"
-        "\n\n[シロップ情報]\n" + syrupDesc
+    "\\n\\n[シロップ情報]\\n" + syrupDesc
     )
     return systemPrompt
 
@@ -396,6 +399,10 @@ async def _create_cocktail_internal(req: CreateCocktailRequest, save_user_info: 
     cocktail_name = data.get("cocktail_name", "")
     concept = data.get("concept", "")
     color = data.get("color", "")
+    if isinstance(color, dict):
+        target_rgb = color.get("target_rgb", "")
+    else:
+        target_rgb = ""
 
     # 3. order_idを6桁ランダムで生成（重複チェック付き）
     import random
@@ -410,7 +417,7 @@ async def _create_cocktail_internal(req: CreateCocktailRequest, save_user_info: 
 
     # 2. 画像生成
     prompt_full = (
-        f"{color}のカクテル。{concept}。{req.prompt}。背景は完全な透明（透過PNG）、カクテル以外は描かず、カクテルそのものだけをリアルな質感の写真風イラストとして生成してください。"
+        f"{color}のカクテル。メインカラーのRGBは{target_rgb}。{concept}。{req.prompt}。背景は完全な透明（透過PNG）、カクテル以外は描かず、カクテルそのものだけをリアルな質感の写真風イラストとして生成してください。必ず生成画像の液体部分の色が指定されたメインカラーのRGB値の色味に近くなるようにしてください"
     )
     api_key_img = os.environ.get("GPT_API_KEY") or os.environ.get("OPENAI_API_KEY")
     if not api_key_img:
