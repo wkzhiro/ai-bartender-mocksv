@@ -88,14 +88,123 @@ class SupabaseClient:
             print(f"Supabase取得エラー: {e}")
             return None
     
-    def get_all_cocktails(self) -> List[Dict[str, Any]]:
+    def get_all_cocktails(self, limit: int = None, offset: int = 0) -> Dict[str, Any]:
         """全カクテルを取得（作成日時降順）"""
         try:
-            result = self.client.table('cocktails').select('*').order('created_at', desc=True).execute()
-            return result.data or []
+            # データを取得（limit+1で次のページの存在を確認）
+            extra_limit = limit + 1 if limit else None
+            query = self.client.table('cocktails').select('*').order('created_at', desc=True)
+            
+            if extra_limit is not None:
+                query = query.limit(extra_limit)
+            if offset > 0:
+                query = query.offset(offset)
+                
+            print(f"デバッグ: クエリ実行 - limit={limit}, offset={offset}, extra_limit={extra_limit}")
+            result = query.execute()
+            data = result.data or []
+            print(f"デバッグ: 取得件数={len(data)}")
+            
+            # 次のページがあるかを判定
+            has_next = False
+            if limit and len(data) > limit:
+                has_next = True
+                data = data[:limit]  # 余分な1件を削除
+                print(f"デバッグ: 次ページあり、データを{limit}件に調整")
+            
+            # 前のページがあるかを判定
+            has_prev = offset > 0
+            
+            print(f"デバッグ: 結果 - データ件数={len(data)}, has_next={has_next}, has_prev={has_prev}")
+            
+            # 安全な方法で全件数を取得
+            total_count = self._get_total_count_safe()
+            
+            return {
+                'data': data,
+                'total_count': total_count,
+                'limit': limit,
+                'offset': offset,
+                'has_next': has_next,
+                'has_prev': has_prev
+            }
         except Exception as e:
             print(f"Supabase全件取得エラー: {e}")
-            return []
+            # エラー時も件数取得を試行
+            total_count = self._get_total_count_safe()
+            
+            return {
+                'data': [],
+                'total_count': total_count,
+                'limit': limit,
+                'offset': offset,
+                'has_next': False,
+                'has_prev': False
+            }
+    
+    def _get_total_count_safe(self) -> int:
+        """安全に全件数を取得（タイムアウト対応）"""
+        try:
+            # 方法1: 最も軽量なカウントクエリ（IDのみ、制限なし）
+            count_result = self.client.table('cocktails').select('id', count='exact').limit(1).execute()
+            count = count_result.count
+            if count is not None:
+                print(f"デバッグ: 全件数取得成功 = {count}")
+                return count
+        except Exception as e:
+            print(f"軽量カウントクエリエラー: {e}")
+        
+        try:
+            # 方法2: さらに軽量なクエリ（created_atのみ）
+            count_result = self.client.table('cocktails').select('created_at', count='exact').limit(1).execute()
+            count = count_result.count
+            if count is not None:
+                print(f"デバッグ: created_atカウント成功 = {count}")
+                return count
+        except Exception as e:
+            print(f"created_atカウントエラー: {e}")
+        
+        try:
+            # 方法3: 複数回に分けて概算取得（1000件ずつ）
+            total_estimated = 0
+            limit_chunk = 1000
+            for i in range(10):  # 最大10000件まで
+                offset_chunk = i * limit_chunk
+                chunk_result = self.client.table('cocktails').select('id').limit(limit_chunk).offset(offset_chunk).execute()
+                chunk_count = len(chunk_result.data) if chunk_result.data else 0
+                total_estimated += chunk_count
+                
+                if chunk_count < limit_chunk:  # 最後のチャンクに到達
+                    break
+            
+            print(f"デバッグ: チャンク方式で概算取得 = {total_estimated}")
+            return total_estimated
+            
+        except Exception as e:
+            print(f"チャンク方式エラー: {e}")
+            
+        # すべて失敗した場合はNone
+        print("デバッグ: すべての件数取得方式が失敗")
+        return None
+    
+    def _get_total_count_efficient(self) -> int:
+        """効率的に全件数を取得"""
+        try:
+            # IDのみを取得してカウント（軽量なクエリ）
+            count_result = self.client.table('cocktails').select('id', count='exact').limit(1).execute()
+            return count_result.count or 0
+        except Exception as e:
+            print(f"件数取得エラー: {e}")
+            # エラー時は概算値として、現在取得できている最大ID+オフセットを返す
+            try:
+                # 最新の1件だけ取得してIDベースで概算
+                latest = self.client.table('cocktails').select('id').order('created_at', desc=True).limit(1).execute()
+                if latest.data and len(latest.data) > 0:
+                    # 概算として適当な値を返す（実際のプロダクションでは要調整）
+                    return 1000  # 仮の概算値
+                return 0
+            except:
+                return 0
     
     def insert_poured_cocktail(self, data: Dict[str, Any]) -> Optional[int]:
         """注がれたカクテルデータを挿入"""

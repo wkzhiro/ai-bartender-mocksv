@@ -23,9 +23,9 @@ def get_cocktail_by_order_id(order_id: str) -> Optional[Dict[str, Any]]:
     """注文IDでカクテルを取得"""
     return supabase_client.get_cocktail_by_order_id(order_id)
 
-def get_all_cocktails() -> List[Dict[str, Any]]:
-    """全カクテルを取得"""
-    return supabase_client.get_all_cocktails()
+def get_all_cocktails(limit: int = None, offset: int = 0) -> Dict[str, Any]:
+    """全カクテルを取得（ページネーション対応）"""
+    return supabase_client.get_all_cocktails(limit=limit, offset=offset)
 
 def insert_poured_cocktail(data: dict) -> Optional[int]:
     """注がれたカクテルデータを挿入"""

@@ -127,11 +127,12 @@ async def post_order(order: OrderRequest):
     return response
 
 @app.get("/order/")
-async def get_order(order_id: Union[int, str]):
+async def get_order(order_id: Union[int, str], limit: int = None, offset: int = 0):
     order_id_str = str(order_id)
     if order_id_str == "all":
-        # 全件取得
-        cocktails = dbmodule.get_all_cocktails()
+        # ページネーション対応の全件取得
+        cocktail_data = dbmodule.get_all_cocktails(limit=limit, offset=offset)
+        cocktails = cocktail_data['data']
         result = []
         for c in cocktails:
             # recipe配列を生成
@@ -158,11 +159,65 @@ async def get_order(order_id: Union[int, str]):
                 "created_at": c.get('created_at', ''),
                 "recipe": recipe,
             })
-        return result
+        
+        # ページネーション情報を含むレスポンス
+        return {
+            "data": result,
+            "total_count": cocktail_data.get('total_count'),
+            "limit": limit,
+            "offset": offset,
+            "has_next": cocktail_data.get('has_next', False),
+            "has_prev": cocktail_data.get('has_prev', False)
+        }
     else:
         return generate_response(order_id_str)
 
 from datetime import datetime
+
+# デバッグ用エンドポイント
+@app.get("/debug/cocktails-count")
+async def debug_cocktails_count():
+    """デバッグ用：カクテル件数確認"""
+    try:
+        # 実際のデータ件数を複数の方法で取得
+        
+        # 方法1: 全件取得（古い方式）
+        try:
+            all_data = supabase_client.client.table('cocktails').select('*').execute()
+            all_count = len(all_data.data) if all_data.data else 0
+        except Exception as e:
+            all_count = f"エラー: {e}"
+        
+        # 方法2: COUNT クエリ
+        try:
+            count_result = supabase_client.client.table('cocktails').select('id', count='exact').limit(1).execute()
+            count_exact = count_result.count
+        except Exception as e:
+            count_exact = f"エラー: {e}"
+        
+        # 方法3: 最初の100件だけ取得
+        try:
+            sample_data = supabase_client.client.table('cocktails').select('*').limit(100).execute()
+            sample_count = len(sample_data.data) if sample_data.data else 0
+        except Exception as e:
+            sample_count = f"エラー: {e}"
+            
+        # 最新の10件のorder_idを確認
+        try:
+            latest_data = supabase_client.client.table('cocktails').select('order_id, created_at').order('created_at', desc=True).limit(10).execute()
+            latest_orders = [{"order_id": item.get('order_id'), "created_at": item.get('created_at')} for item in latest_data.data] if latest_data.data else []
+        except Exception as e:
+            latest_orders = f"エラー: {e}"
+        
+        return {
+            "all_count": all_count,
+            "count_exact": count_exact, 
+            "sample_count": sample_count,
+            "latest_orders": latest_orders,
+            "table_name": "cocktails"
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 @app.post("/delivery/")
 async def order_(deriver: DeriveryRequest):
