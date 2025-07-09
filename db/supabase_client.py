@@ -35,6 +35,8 @@ class SupabaseClient:
             user_name VARCHAR(128),
             career VARCHAR(128),
             hobby VARCHAR(128),
+            recipe_prompt_id INTEGER REFERENCES prompts(id),
+            image_prompt_id INTEGER REFERENCES prompts(id),
             created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
         """
@@ -57,9 +59,35 @@ class SupabaseClient:
         );
         """
         
+        prompts_sql = """
+        CREATE TABLE IF NOT EXISTS prompts (
+            id SERIAL PRIMARY KEY,
+            prompt_type VARCHAR(50) NOT NULL,
+            title VARCHAR(255) NOT NULL,
+            description TEXT,
+            prompt_text TEXT NOT NULL,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        );
+        """
+        
+        cocktail_prompts_sql = """
+        CREATE TABLE IF NOT EXISTS cocktail_prompts (
+            id SERIAL PRIMARY KEY,
+            cocktail_id INTEGER NOT NULL REFERENCES cocktails(id) ON DELETE CASCADE,
+            prompt_id INTEGER NOT NULL REFERENCES prompts(id) ON DELETE CASCADE,
+            prompt_type VARCHAR(50) NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            UNIQUE(cocktail_id, prompt_type)
+        );
+        """
+        
         try:
             self.client.postgrest.rpc('exec_sql', {'sql': cocktails_sql}).execute()
             self.client.postgrest.rpc('exec_sql', {'sql': poured_cocktails_sql}).execute()
+            self.client.postgrest.rpc('exec_sql', {'sql': prompts_sql}).execute()
+            self.client.postgrest.rpc('exec_sql', {'sql': cocktail_prompts_sql}).execute()
             print("Supabaseテーブル作成完了")
         except Exception as e:
             print(f"テーブル作成エラー: {e}")
@@ -67,6 +95,8 @@ class SupabaseClient:
             print("SupabaseダッシュボードでSQLエディタを使用してテーブルを作成してください:")
             print(cocktails_sql)
             print(poured_cocktails_sql)
+            print(prompts_sql)
+            print(cocktail_prompts_sql)
     
     def insert_cocktail(self, data: Dict[str, Any]) -> Optional[int]:
         """カクテルデータを挿入"""
@@ -224,6 +254,122 @@ class SupabaseClient:
             return True
         except:
             return False
+    
+    def get_prompts(self, prompt_type: str = None, is_active: bool = True) -> List[Dict[str, Any]]:
+        """プロンプトを取得"""
+        try:
+            query = self.client.table('prompts').select('*')
+            if prompt_type:
+                query = query.eq('prompt_type', prompt_type)
+            if is_active:
+                query = query.eq('is_active', True)
+            result = query.order('created_at', desc=True).execute()
+            return result.data or []
+        except Exception as e:
+            print(f"プロンプト取得エラー: {e}")
+            return []
+    
+    def get_prompt_by_id(self, prompt_id: int) -> Optional[Dict[str, Any]]:
+        """IDでプロンプトを取得"""
+        try:
+            result = self.client.table('prompts').select('*').eq('id', prompt_id).execute()
+            return result.data[0] if result.data else None
+        except Exception as e:
+            print(f"プロンプト取得エラー: {e}")
+            return None
+    
+    def insert_prompt(self, data: Dict[str, Any]) -> Optional[int]:
+        """プロンプトを挿入"""
+        try:
+            result = self.client.table('prompts').insert(data).execute()
+            if result.data:
+                return result.data[0]['id']
+            return None
+        except Exception as e:
+            print(f"プロンプト挿入エラー: {e}")
+            return None
+    
+    def update_prompt(self, prompt_id: int, data: Dict[str, Any]) -> bool:
+        """プロンプトを更新"""
+        try:
+            data['updated_at'] = datetime.now().isoformat()
+            result = self.client.table('prompts').update(data).eq('id', prompt_id).execute()
+            return bool(result.data)
+        except Exception as e:
+            print(f"プロンプト更新エラー: {e}")
+            return False
+    
+    def link_cocktail_prompt(self, cocktail_id: int, prompt_id: int, prompt_type: str) -> bool:
+        """カクテルとプロンプトを関連付け"""
+        try:
+            # 既存のレコードを削除してから新しいレコードを挿入（UPSERT的な動作）
+            self.client.table('cocktail_prompts').delete().eq('cocktail_id', cocktail_id).eq('prompt_type', prompt_type).execute()
+            
+            data = {
+                'cocktail_id': cocktail_id,
+                'prompt_id': prompt_id,
+                'prompt_type': prompt_type
+            }
+            result = self.client.table('cocktail_prompts').insert(data).execute()
+            return bool(result.data)
+        except Exception as e:
+            print(f"カクテル-プロンプト関連付けエラー: {e}")
+            return False
+    
+    def get_cocktail_prompts(self, cocktail_id: int) -> List[Dict[str, Any]]:
+        """カクテルに関連付けられたプロンプトを取得"""
+        try:
+            result = self.client.table('cocktail_prompts').select(
+                'prompt_id, prompt_type, prompts(id, prompt_type, title, description, prompt_text)'
+            ).eq('cocktail_id', cocktail_id).execute()
+            return result.data or []
+        except Exception as e:
+            print(f"カクテル-プロンプト取得エラー: {e}")
+            return []
+    
+    def get_cocktail_prompt_by_type(self, cocktail_id: int, prompt_type: str) -> Optional[Dict[str, Any]]:
+        """カクテルの特定タイプのプロンプトを取得"""
+        try:
+            result = self.client.table('cocktail_prompts').select(
+                'prompt_id, prompt_type, prompts(id, prompt_type, title, description, prompt_text)'
+            ).eq('cocktail_id', cocktail_id).eq('prompt_type', prompt_type).execute()
+            return result.data[0] if result.data else None
+        except Exception as e:
+            print(f"カクテル-プロンプト取得エラー: {e}")
+            return None
+    
+    def initialize_default_prompts(self):
+        """デフォルトプロンプトの初期化"""
+        try:
+            # 既存のプロンプトが存在するかチェック
+            existing = self.get_prompts()
+            if existing:
+                print("プロンプトが既に存在します")
+                return
+            
+            # デフォルトプロンプトを挿入
+            default_prompts = [
+                {
+                    'prompt_type': 'recipe',
+                    'title': 'デフォルトレシピ生成プロンプト',
+                    'description': 'カクテルレシピ生成用のベースプロンプト',
+                    'prompt_text': 'あなたはプロのバーテンダーです。以下のシロップ情報を参考に、入力された情報からカクテル風の名前（日本語で20文字以内）、そのカクテルのコンセプト文（日本語で1文）、生成AIでカクテルの画像を生成するためのメインカラー（液体の色）を表現する文章とメインカラーのRGB値、およびレシピ（シロップ名と比率のリスト、合計25%以内、色や味のイメージに合うように最大4種まで混ぜてOK）を考えてください。'
+                },
+                {
+                    'prompt_type': 'image',
+                    'title': 'デフォルト画像生成プロンプト',
+                    'description': 'カクテル画像生成用のベースプロンプト',
+                    'prompt_text': '背景は完全な透明（透過PNG）、カクテル以外は描かず、カクテルそのものだけをリアルな質感の写真風イラストとして生成してください。必ず生成画像の液体部分の色が指定されたメインカラーのRGB値の色味に近くなるようにしてください'
+                }
+            ]
+            
+            for prompt_data in default_prompts:
+                self.insert_prompt(prompt_data)
+            
+            print("デフォルトプロンプトを初期化しました")
+            
+        except Exception as e:
+            print(f"デフォルトプロンプト初期化エラー: {e}")
 
 # グローバルインスタンス
 supabase_client = SupabaseClient()

@@ -48,3 +48,36 @@ def get_cocktail_mock(order_id: str) -> Optional[MockCocktail]:
     if data:
         return MockCocktail(data)
     return None
+
+# プロンプト関連の関数
+def get_prompts(prompt_type: str = None, is_active: bool = True):
+    """プロンプトを取得"""
+    return supabase_client.get_prompts(prompt_type=prompt_type, is_active=is_active)
+
+def get_prompt_by_id(prompt_id: int):
+    """IDでプロンプトを取得"""
+    return supabase_client.get_prompt_by_id(prompt_id)
+
+def insert_prompt(data: dict):
+    """プロンプトを挿入"""
+    return supabase_client.insert_prompt(data)
+
+def update_prompt(prompt_id: int, data: dict):
+    """プロンプトを更新"""
+    return supabase_client.update_prompt(prompt_id, data)
+
+def link_cocktail_prompt(cocktail_id: int, prompt_id: int, prompt_type: str):
+    """カクテルとプロンプトを関連付け"""
+    return supabase_client.link_cocktail_prompt(cocktail_id, prompt_id, prompt_type)
+
+def get_cocktail_prompts(cocktail_id: int):
+    """カクテルに関連付けられたプロンプトを取得"""
+    return supabase_client.get_cocktail_prompts(cocktail_id)
+
+def get_cocktail_prompt_by_type(cocktail_id: int, prompt_type: str):
+    """カクテルの特定タイプのプロンプトを取得"""
+    return supabase_client.get_cocktail_prompt_by_type(cocktail_id, prompt_type)
+
+def initialize_default_prompts():
+    """デフォルトプロンプトの初期化"""
+    return supabase_client.initialize_default_prompts()

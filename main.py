@@ -142,6 +142,16 @@ async def get_order(order_id: Union[int, str], limit: int = None, offset: int = 
                 {"syrup": "シトラス", "ratio": c.get('flavor_ratio3', '')},
                 {"syrup": "ホワイト", "ratio": c.get('flavor_ratio4', '')},
             ]
+            
+            # プロンプト情報を取得
+            cocktail_id = c.get('id')
+            prompts_info = {}
+            if cocktail_id:
+                cocktail_prompts = dbmodule.get_cocktail_prompts(cocktail_id)
+                for cp in cocktail_prompts:
+                    prompt_type = cp.get('prompt_type')
+                    prompts_info[f'{prompt_type}_prompt'] = cp.get('prompts', {})
+            
             result.append({
                 "order_id": c.get('order_id', ''),
                 "name": c.get('name', ''),
@@ -158,6 +168,7 @@ async def get_order(order_id: Union[int, str], limit: int = None, offset: int = 
                 "hobby": c.get('hobby', ''),
                 "created_at": c.get('created_at', ''),
                 "recipe": recipe,
+                "prompts": prompts_info,
             })
         
         # ページネーション情報を含むレスポンス
@@ -268,6 +279,8 @@ class CreateCocktailRequest(BaseModel):
     hobby: str
     prompt: str = ""  # 画像生成用プロンプト（省略可）
     save_user_info: bool = True  # ユーザー情報を保存するかどうか（デフォルトTrue）
+    recipe_prompt_id: int = None  # レシピ生成用プロンプトID（省略可）
+    image_prompt_id: int = None  # 画像生成用プロンプトID（省略可）
 
 class CreateCocktailAnonymousRequest(BaseModel):
     recent_event: str
@@ -276,6 +289,8 @@ class CreateCocktailAnonymousRequest(BaseModel):
     career: str
     hobby: str
     prompt: str = ""  # 画像生成用プロンプト（省略可）
+    recipe_prompt_id: int = None  # レシピ生成用プロンプトID（省略可）
+    image_prompt_id: int = None  # 画像生成用プロンプトID（省略可）
 
 class CreateCocktailResponse(BaseModel):
     result: str
@@ -359,17 +374,27 @@ def upload_image_to_storage(image_base64: str, order_id: str) -> str:
         # アップロードに失敗した場合はbase64をそのまま返す
         return image_base64
 
-def build_recipe_system_prompt(syrup_dict):
+def build_recipe_system_prompt(syrup_dict, custom_prompt=None):
+    """レシピ生成用システムプロンプトを構築"""
     syrupDesc = "\n".join([f"{k}: {v['desc']}（色: {v['color']}）" for k, v in syrup_dict.items()])
-    systemPrompt = (
-        "あなたはプロのバーテンダーです。"
-        "以下のシロップ情報を参考に、入力された情報からカクテル風の名前（日本語で20文字以内）、"
-        "そのカクテルのコンセプト文（日本語で1文）、生成AIでカクテルの画像を生成するためのメインカラー（液体の色）を表現する文章とメインカラーのRGB値、およびレシピ（シロップ名と比率のリスト、合計25%以内、色や味のイメージに合うように最大4種まで混ぜてOK）を考えてください。"
-        "メインカラーは、4種のシロップの任意の比率での混合で作成できる色にしてください。"
-        "以下に記載するシロップの情報を元に、必ず上記のメインカラーの表現に合うようにシロップ比率を考えてください。"
-        "シロップのホワイトは0~10%で混ぜるようにしてください。また、出力は必ず次のJSON形式で返してください。"
-        "0％でも、ベリー、青りんご、シトラス、ホワイトの4つの配合はそれぞれ示すようにしてください。"
-        "colorはstring型（例: \"春の陽だまりのような黄色（(246, 236, 55)）\"）で返してください。"
+    
+    if custom_prompt:
+        # カスタムプロンプトがある場合は、それをベースに使用
+        base_prompt = custom_prompt
+    else:
+        # デフォルトプロンプト
+        base_prompt = (
+            "あなたはプロのバーテンダーです。"
+            "以下のシロップ情報を参考に、入力された情報からカクテル風の名前（日本語で20文字以内）、"
+            "そのカクテルのコンセプト文（日本語で1文）、生成AIでカクテルの画像を生成するためのメインカラー（液体の色）を表現する文章とメインカラーのRGB値、およびレシピ（シロップ名と比率のリスト、合計25%以内、色や味のイメージに合うように最大4種まで混ぜてOK）を考えてください。"
+            "メインカラーは、4種のシロップの任意の比率での混合で作成できる色にしてください。"
+            "以下に記載するシロップの情報を元に、必ず上記のメインカラーの表現に合うようにシロップ比率を考えてください。"
+            "シロップのホワイトは0~10%で混ぜるようにしてください。また、出力は必ず次のJSON形式で返してください。"
+            "0％でも、ベリー、青りんご、シトラス、ホワイトの4つの配合はそれぞれ示すようにしてください。"
+            "colorはstring型（例: \"春の陽だまりのような黄色（(246, 236, 55)）\"）で返してください。"
+        )
+    
+    json_format = (
         "```json\\n"
             "{\n"
             "  \"cocktail_name\": \"...\",\n"
@@ -383,8 +408,9 @@ def build_recipe_system_prompt(syrup_dict):
             "  ]\n"
             "}\n"
         "```"
-    "\\n\\n[シロップ情報]\\n" + syrupDesc
     )
+    
+    systemPrompt = base_prompt + json_format + "\\n\\n[シロップ情報]\\n" + syrupDesc
     return systemPrompt
 
 @app.post("/cocktail/", response_model=CreateCocktailResponse)
@@ -404,14 +430,24 @@ async def create_cocktail_anonymous(req: CreateCocktailAnonymousRequest):
         career=req.career,
         hobby=req.hobby,
         prompt=req.prompt,
-        save_user_info=False
+        save_user_info=False,
+        recipe_prompt_id=req.recipe_prompt_id,
+        image_prompt_id=req.image_prompt_id
     )
     return await _create_cocktail_internal(full_req, save_user_info=False, use_storage=True)
 
 async def _create_cocktail_internal(req: CreateCocktailRequest, save_user_info: bool = True, use_storage: bool = False):
     # 1. レシピ生成
     syrup_dict = load_syrup_info_txt()
-    systemPrompt = build_recipe_system_prompt(syrup_dict)
+    
+    # プロンプトIDが指定されている場合は、DBからプロンプトを取得
+    custom_recipe_prompt = None
+    if req.recipe_prompt_id:
+        prompt_data = dbmodule.get_prompt_by_id(req.recipe_prompt_id)
+        if prompt_data and prompt_data['prompt_type'] == 'recipe':
+            custom_recipe_prompt = prompt_data['prompt_text']
+    
+    systemPrompt = build_recipe_system_prompt(syrup_dict, custom_recipe_prompt)
     userPrompt = (
         f"最近の出来事: {req.recent_event}\n"
         f"イベント名: {req.event_name}\n"
@@ -470,9 +506,19 @@ async def _create_cocktail_internal(req: CreateCocktailRequest, save_user_info: 
         return CreateCocktailResponse(result="error", detail="注文番号の重複が解消できませんでした。")
 
     # 2. 画像生成
-    prompt_full = (
-        f"{color}のカクテル。メインカラーのRGBは{target_rgb}。{concept}。{req.prompt}。背景は完全な透明（透過PNG）、カクテル以外は描かず、カクテルそのものだけをリアルな質感の写真風イラストとして生成してください。必ず生成画像の液体部分の色が指定されたメインカラーのRGB値の色味に近くなるようにしてください"
-    )
+    # プロンプトIDが指定されている場合は、DBからプロンプトを取得
+    custom_image_prompt = None
+    if req.image_prompt_id:
+        prompt_data = dbmodule.get_prompt_by_id(req.image_prompt_id)
+        if prompt_data and prompt_data['prompt_type'] == 'image':
+            custom_image_prompt = prompt_data['prompt_text']
+    
+    if custom_image_prompt:
+        prompt_full = f"{color}のカクテル。メインカラーのRGBは{target_rgb}。{concept}。{req.prompt}。{custom_image_prompt}"
+    else:
+        prompt_full = (
+            f"{color}のカクテル。メインカラーのRGBは{target_rgb}。{concept}。{req.prompt}。背景は完全な透明（透過PNG）、カクテル以外は描かず、カクテルそのものだけをリアルな質感の写真風イラストとして生成してください。必ず生成画像の液体部分の色が指定されたメインカラーのRGB値の色味に近くなるようにしてください"
+        )
     api_key_img = os.environ.get("GPT_API_KEY") or os.environ.get("OPENAI_API_KEY")
     if not api_key_img:
         return CreateCocktailResponse(result="error", detail="gpt-image APIキー(GPT_API_KEY)が設定されていません。")
@@ -591,6 +637,13 @@ async def _create_cocktail_internal(req: CreateCocktailRequest, save_user_info: 
                 result="error",
                 detail=f"DB insert failed. db_data={db_data}, inserted_id={inserted_id}"
             )
+        
+        # 使用したプロンプトIDをカクテルと関連付け
+        if req.recipe_prompt_id:
+            dbmodule.link_cocktail_prompt(inserted_id, req.recipe_prompt_id, 'recipe')
+        if req.image_prompt_id:
+            dbmodule.link_cocktail_prompt(inserted_id, req.image_prompt_id, 'image')
+        
         # use_storageのときはimage_base64にURLを返す
         if use_storage:
             image_base64_value = image_data  # URL
@@ -612,5 +665,78 @@ async def _create_cocktail_internal(req: CreateCocktailRequest, save_user_info: 
         # print("DB insert exception:", tb)
         # print("db_data:", db_data)
         return CreateCocktailResponse(result="error", detail=f"{e}\n{tb}\ndb_data={db_data}")
+
+# プロンプト管理API
+@app.get("/prompts/")
+async def get_prompts(prompt_type: str = None):
+    """プロンプト一覧を取得"""
+    try:
+        prompts = dbmodule.get_prompts(prompt_type=prompt_type)
+        return {"result": "success", "prompts": prompts}
+    except Exception as e:
+        return {"result": "error", "detail": str(e)}
+
+@app.get("/prompts/{prompt_id}")
+async def get_prompt(prompt_id: int):
+    """プロンプトを取得"""
+    try:
+        prompt = dbmodule.get_prompt_by_id(prompt_id)
+        if not prompt:
+            return {"result": "error", "detail": "プロンプトが見つかりません"}
+        return {"result": "success", "prompt": prompt}
+    except Exception as e:
+        return {"result": "error", "detail": str(e)}
+
+class PromptRequest(BaseModel):
+    prompt_type: str
+    title: str
+    description: str = ""
+    prompt_text: str
+    is_active: bool = True
+
+@app.post("/prompts/")
+async def create_prompt(req: PromptRequest):
+    """プロンプトを作成"""
+    try:
+        data = {
+            "prompt_type": req.prompt_type,
+            "title": req.title,
+            "description": req.description,
+            "prompt_text": req.prompt_text,
+            "is_active": req.is_active
+        }
+        prompt_id = dbmodule.insert_prompt(data)
+        if not prompt_id:
+            return {"result": "error", "detail": "プロンプトの作成に失敗しました"}
+        return {"result": "success", "id": prompt_id}
+    except Exception as e:
+        return {"result": "error", "detail": str(e)}
+
+@app.put("/prompts/{prompt_id}")
+async def update_prompt(prompt_id: int, req: PromptRequest):
+    """プロンプトを更新"""
+    try:
+        data = {
+            "prompt_type": req.prompt_type,
+            "title": req.title,
+            "description": req.description,
+            "prompt_text": req.prompt_text,
+            "is_active": req.is_active
+        }
+        success = dbmodule.update_prompt(prompt_id, data)
+        if not success:
+            return {"result": "error", "detail": "プロンプトの更新に失敗しました"}
+        return {"result": "success"}
+    except Exception as e:
+        return {"result": "error", "detail": str(e)}
+
+@app.post("/prompts/initialize")
+async def initialize_prompts():
+    """デフォルトプロンプトを初期化"""
+    try:
+        dbmodule.initialize_default_prompts()
+        return {"result": "success", "detail": "デフォルトプロンプトを初期化しました"}
+    except Exception as e:
+        return {"result": "error", "detail": str(e)}
 
 # === ここまで追加 ===
