@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 import base64
 import random
-from typing import Union
+from typing import Union, Optional
 from pydantic import BaseModel
 from PIL import Image
 import io
@@ -279,8 +279,8 @@ class CreateCocktailRequest(BaseModel):
     hobby: str
     prompt: str = ""  # 画像生成用プロンプト（省略可）
     save_user_info: bool = True  # ユーザー情報を保存するかどうか（デフォルトTrue）
-    recipe_prompt_id: int = None  # レシピ生成用プロンプトID（省略可）
-    image_prompt_id: int = None  # 画像生成用プロンプトID（省略可）
+    recipe_prompt_id: Optional[int] = None  # レシピ生成用プロンプトID（省略可）
+    image_prompt_id: Optional[int] = None  # 画像生成用プロンプトID（省略可）
 
 class CreateCocktailAnonymousRequest(BaseModel):
     recent_event: str
@@ -289,8 +289,8 @@ class CreateCocktailAnonymousRequest(BaseModel):
     career: str
     hobby: str
     prompt: str = ""  # 画像生成用プロンプト（省略可）
-    recipe_prompt_id: int = None  # レシピ生成用プロンプトID（省略可）
-    image_prompt_id: int = None  # 画像生成用プロンプトID（省略可）
+    recipe_prompt_id: Optional[int] = None  # レシピ生成用プロンプトID（省略可）
+    image_prompt_id: Optional[int] = None  # 画像生成用プロンプトID（省略可）
 
 class CreateCocktailResponse(BaseModel):
     result: str
@@ -641,8 +641,23 @@ async def _create_cocktail_internal(req: CreateCocktailRequest, save_user_info: 
         # 使用したプロンプトIDをカクテルと関連付け
         if req.recipe_prompt_id:
             dbmodule.link_cocktail_prompt(inserted_id, req.recipe_prompt_id, 'recipe')
+        else:
+            # デフォルトプロンプトを使用した場合は、デフォルトプロンプトのIDを取得して保存
+            default_recipe_prompts = dbmodule.get_prompts('recipe', True)
+            if default_recipe_prompts:
+                # 最初のアクティブなレシピプロンプトをデフォルトとして使用
+                default_prompt_id = default_recipe_prompts[0]['id']
+                dbmodule.link_cocktail_prompt(inserted_id, default_prompt_id, 'recipe')
+        
         if req.image_prompt_id:
             dbmodule.link_cocktail_prompt(inserted_id, req.image_prompt_id, 'image')
+        else:
+            # デフォルトプロンプトを使用した場合は、デフォルトプロンプトのIDを取得して保存
+            default_image_prompts = dbmodule.get_prompts('image', True)
+            if default_image_prompts:
+                # 最初のアクティブな画像プロンプトをデフォルトとして使用
+                default_prompt_id = default_image_prompts[0]['id']
+                dbmodule.link_cocktail_prompt(inserted_id, default_prompt_id, 'image')
         
         # use_storageのときはimage_base64にURLを返す
         if use_storage:
