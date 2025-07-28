@@ -5,6 +5,7 @@ import base64
 import random
 from typing import Union, Optional
 from pydantic import BaseModel
+import uuid
 from PIL import Image
 import io
 
@@ -127,11 +128,11 @@ async def post_order(order: OrderRequest):
     return response
 
 @app.get("/order/")
-async def get_order(order_id: Union[int, str], limit: int = None, offset: int = 0):
+async def get_order(order_id: Union[int, str], limit: int = None, offset: int = 0, event_id: str = None):
     order_id_str = str(order_id)
     if order_id_str == "all":
-        # ページネーション対応の全件取得
-        cocktail_data = dbmodule.get_all_cocktails(limit=limit, offset=offset)
+        # ページネーション対応の全件取得（event_idでフィルター可能）
+        cocktail_data = dbmodule.get_all_cocktails(limit=limit, offset=offset, event_id=event_id)
         cocktails = cocktail_data['data']
         result = []
         for c in cocktails:
@@ -281,6 +282,7 @@ class CreateCocktailRequest(BaseModel):
     save_user_info: bool = True  # ユーザー情報を保存するかどうか（デフォルトTrue）
     recipe_prompt_id: Optional[int] = None  # レシピ生成用プロンプトID（省略可）
     image_prompt_id: Optional[int] = None  # 画像生成用プロンプトID（省略可）
+    event_id: Optional[str] = None  # イベントID（省略可）
 
 class CreateCocktailAnonymousRequest(BaseModel):
     recent_event: str
@@ -291,6 +293,7 @@ class CreateCocktailAnonymousRequest(BaseModel):
     prompt: str = ""  # 画像生成用プロンプト（省略可）
     recipe_prompt_id: Optional[int] = None  # レシピ生成用プロンプトID（省略可）
     image_prompt_id: Optional[int] = None  # 画像生成用プロンプトID（省略可）
+    event_id: Optional[str] = None  # イベントID（省略可）
 
 class CreateCocktailResponse(BaseModel):
     result: str
@@ -384,7 +387,9 @@ def build_recipe_system_prompt(syrup_dict, custom_prompt=None):
     else:
         # デフォルトプロンプト
         base_prompt = (
-            "あなたはプロのバーテンダーです。"
+            "あなたはプロのバーテンダーです。お客様の「最近の出来事」「キャリア」「趣味」の3つの要素を均等に重視し、バランス良くカクテルに反映させてください。"
+            "カクテル名の作成時は、3つの要素から1つずつ特徴を取り入れるか、または全体のイメージを統合した名前にしてください。"
+            "コンセプトも同様に、最近の出来事だけでなく、キャリアや趣味の要素も含めて総合的な印象を表現してください。"
             "以下のシロップ情報を参考に、入力された情報からカクテル風の名前（日本語で20文字以内）、"
             "そのカクテルのコンセプト文（日本語で1文）、生成AIでカクテルの画像を生成するためのメインカラー（液体の色）を表現する文章とメインカラーのRGB値、およびレシピ（シロップ名と比率のリスト、合計25%以内、色や味のイメージに合うように最大4種まで混ぜてOK）を考えてください。"
             "メインカラーは、4種のシロップの任意の比率での混合で作成できる色にしてください。"
@@ -432,11 +437,28 @@ async def create_cocktail_anonymous(req: CreateCocktailAnonymousRequest):
         prompt=req.prompt,
         save_user_info=False,
         recipe_prompt_id=req.recipe_prompt_id,
-        image_prompt_id=req.image_prompt_id
+        image_prompt_id=req.image_prompt_id,
+        event_id=req.event_id
     )
     return await _create_cocktail_internal(full_req, save_user_info=False, use_storage=True)
 
 async def _create_cocktail_internal(req: CreateCocktailRequest, save_user_info: bool = True, use_storage: bool = False):
+    # 0. イベント関連の処理
+    event_id = req.event_id
+    if not event_id and req.event_name:
+        # event_nameからevent_idを取得、または新規作成
+        existing_event = dbmodule.get_event_by_name(req.event_name)
+        if existing_event:
+            event_id = existing_event['id']
+        else:
+            # 新しいイベントを作成
+            new_event_data = {
+                'name': req.event_name,
+                'description': f'自動生成されたイベント: {req.event_name}',
+                'is_active': True
+            }
+            event_id = dbmodule.insert_event(new_event_data)
+    
     # 1. レシピ生成
     syrup_dict = load_syrup_info_txt()
     
@@ -449,11 +471,12 @@ async def _create_cocktail_internal(req: CreateCocktailRequest, save_user_info: 
     
     systemPrompt = build_recipe_system_prompt(syrup_dict, custom_recipe_prompt)
     userPrompt = (
-        f"最近の出来事: {req.recent_event}\n"
+        f"【最近の出来事】（カクテルの雰囲気や感情面に反映）: {req.recent_event}\n"
+        f"【キャリア】（カクテルの力強さや構造に反映）: {req.career}\n"
+        f"【趣味】（カクテルの個性や独創性に反映）: {req.hobby}\n"
         f"イベント名: {req.event_name}\n"
-        f"名前: {req.name}\n"
-        f"キャリア: {req.career}\n"
-        f"趣味: {req.hobby}"
+        f"名前: {req.name}\n\n"
+        f"上記の3つの要素をそれぞれ活かし、バランスの取れたオリジナルカクテルを作成してください。"
     )
     api_key = os.environ.get("AZURE_OPENAI_API_KEY_LLM") or os.environ.get("OPENAI_API_KEY")
     endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT_LLM")
@@ -626,6 +649,7 @@ async def _create_cocktail_internal(req: CreateCocktailRequest, save_user_info: 
         "user_name": user_name,
         "career": career,
         "hobby": hobby,
+        "event_id": event_id,
     }
     try:
         inserted_id = dbmodule.insert_cocktail(db_data)
@@ -751,6 +775,64 @@ async def initialize_prompts():
     try:
         dbmodule.initialize_default_prompts()
         return {"result": "success", "detail": "デフォルトプロンプトを初期化しました"}
+    except Exception as e:
+        return {"result": "error", "detail": str(e)}
+
+# イベント管理API
+@app.get("/events/")
+async def get_events(is_active: bool = None):
+    """イベント一覧を取得"""
+    try:
+        events = dbmodule.get_events(is_active=is_active)
+        return {"result": "success", "events": events}
+    except Exception as e:
+        return {"result": "error", "detail": str(e)}
+
+@app.get("/events/{event_id}")
+async def get_event(event_id: str):
+    """イベントを取得"""
+    try:
+        event = dbmodule.get_event_by_id(event_id)
+        if not event:
+            return {"result": "error", "detail": "イベントが見つかりません"}
+        return {"result": "success", "event": event}
+    except Exception as e:
+        return {"result": "error", "detail": str(e)}
+
+class EventRequest(BaseModel):
+    name: str
+    description: str = ""
+    is_active: bool = True
+
+@app.post("/events/")
+async def create_event(req: EventRequest):
+    """イベントを作成"""
+    try:
+        data = {
+            "name": req.name,
+            "description": req.description,
+            "is_active": req.is_active
+        }
+        event_id = dbmodule.insert_event(data)
+        if not event_id:
+            return {"result": "error", "detail": "イベントの作成に失敗しました"}
+        return {"result": "success", "id": event_id}
+    except Exception as e:
+        return {"result": "error", "detail": str(e)}
+
+@app.put("/events/{event_id}")
+async def update_event(event_id: str, req: EventRequest):
+    """イベントを更新"""
+    try:
+        data = {
+            "name": req.name,
+            "description": req.description,
+            "is_active": req.is_active
+        }
+        success = dbmodule.update_event(event_id, data)
+        if not success:
+            return {"result": "error", "detail": "イベントの更新に失敗しました"}
+        return {"result": "success"}
     except Exception as e:
         return {"result": "error", "detail": str(e)}
 

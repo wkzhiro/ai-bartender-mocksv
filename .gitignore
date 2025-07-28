@@ -5,3 +5,4 @@ venv
 README_supabase_migration.md
 migration_env
 __pycache__
+fastapi\replace_usernames.py

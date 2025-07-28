@@ -1,8 +1,9 @@
 import os
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union
 from datetime import datetime
 from supabase import create_client, Client
 from dotenv import load_dotenv
+import uuid
 
 load_dotenv(override=True)
 
@@ -118,12 +119,18 @@ class SupabaseClient:
             print(f"Supabase取得エラー: {e}")
             return None
     
-    def get_all_cocktails(self, limit: int = None, offset: int = 0) -> Dict[str, Any]:
-        """全カクテルを取得（作成日時降順）"""
+    def get_all_cocktails(self, limit: int = None, offset: int = 0, event_id: Union[str, uuid.UUID] = None) -> Dict[str, Any]:
+        """全カクテルを取得（作成日時降順）、event_idでフィルター可能"""
         try:
             # データを取得（limit+1で次のページの存在を確認）
             extra_limit = limit + 1 if limit else None
             query = self.client.table('cocktails').select('*').order('created_at', desc=True)
+            
+            # イベントIDでフィルター
+            if event_id is not None:
+                # UUIDの場合は文字列に変換
+                event_id_str = str(event_id) if isinstance(event_id, uuid.UUID) else event_id
+                query = query.eq('event_id', event_id_str)
             
             if extra_limit is not None:
                 query = query.limit(extra_limit)
@@ -148,7 +155,7 @@ class SupabaseClient:
             print(f"デバッグ: 結果 - データ件数={len(data)}, has_next={has_next}, has_prev={has_prev}")
             
             # 安全な方法で全件数を取得
-            total_count = self._get_total_count_safe()
+            total_count = self._get_total_count_safe(event_id=event_id)
             
             return {
                 'data': data,
@@ -161,7 +168,7 @@ class SupabaseClient:
         except Exception as e:
             print(f"Supabase全件取得エラー: {e}")
             # エラー時も件数取得を試行
-            total_count = self._get_total_count_safe()
+            total_count = self._get_total_count_safe(event_id=event_id)
             
             return {
                 'data': [],
@@ -172,11 +179,16 @@ class SupabaseClient:
                 'has_prev': False
             }
     
-    def _get_total_count_safe(self) -> int:
-        """安全に全件数を取得（タイムアウト対応）"""
+    def _get_total_count_safe(self, event_id: Union[str, uuid.UUID] = None) -> int:
+        """安全に全件数を取得（タイムアウト対応）、event_idでフィルター可能"""
         try:
             # 方法1: 最も軽量なカウントクエリ（IDのみ、制限なし）
-            count_result = self.client.table('cocktails').select('id', count='exact').limit(1).execute()
+            query = self.client.table('cocktails').select('id', count='exact').limit(1)
+            if event_id is not None:
+                # UUIDの場合は文字列に変換
+                event_id_str = str(event_id) if isinstance(event_id, uuid.UUID) else event_id
+                query = query.eq('event_id', event_id_str)
+            count_result = query.execute()
             count = count_result.count
             if count is not None:
                 print(f"デバッグ: 全件数取得成功 = {count}")
@@ -370,6 +382,62 @@ class SupabaseClient:
             
         except Exception as e:
             print(f"デフォルトプロンプト初期化エラー: {e}")
+    
+    # イベント関連のメソッド
+    def get_events(self, is_active: bool = None) -> List[Dict[str, Any]]:
+        """イベント一覧を取得"""
+        try:
+            query = self.client.table('events').select('*')
+            if is_active is not None:
+                query = query.eq('is_active', is_active)
+            result = query.order('created_at', desc=True).execute()
+            return result.data or []
+        except Exception as e:
+            print(f"イベント取得エラー: {e}")
+            return []
+    
+    def get_event_by_id(self, event_id: Union[str, uuid.UUID]) -> Optional[Dict[str, Any]]:
+        """IDでイベントを取得"""
+        try:
+            # UUIDの場合は文字列に変換
+            event_id_str = str(event_id) if isinstance(event_id, uuid.UUID) else event_id
+            result = self.client.table('events').select('*').eq('id', event_id_str).execute()
+            return result.data[0] if result.data else None
+        except Exception as e:
+            print(f"イベント取得エラー: {e}")
+            return None
+    
+    def get_event_by_name(self, event_name: str) -> Optional[Dict[str, Any]]:
+        """名前でイベントを取得"""
+        try:
+            result = self.client.table('events').select('*').eq('name', event_name).execute()
+            return result.data[0] if result.data else None
+        except Exception as e:
+            print(f"イベント取得エラー: {e}")
+            return None
+    
+    def insert_event(self, data: Dict[str, Any]) -> Optional[str]:
+        """イベントを挿入"""
+        try:
+            result = self.client.table('events').insert(data).execute()
+            if result.data:
+                return str(result.data[0]['id'])
+            return None
+        except Exception as e:
+            print(f"イベント挿入エラー: {e}")
+            return None
+    
+    def update_event(self, event_id: Union[str, uuid.UUID], data: Dict[str, Any]) -> bool:
+        """イベントを更新"""
+        try:
+            data['updated_at'] = datetime.now().isoformat()
+            # UUIDの場合は文字列に変換
+            event_id_str = str(event_id) if isinstance(event_id, uuid.UUID) else event_id
+            result = self.client.table('events').update(data).eq('id', event_id_str).execute()
+            return bool(result.data)
+        except Exception as e:
+            print(f"イベント更新エラー: {e}")
+            return False
 
 # グローバルインスタンス
 supabase_client = SupabaseClient()

@@ -1,8 +1,9 @@
 import os
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union
 from datetime import datetime
 from dotenv import load_dotenv
 from .supabase_client import supabase_client
+import uuid
 
 load_dotenv(override=True)
 
@@ -23,9 +24,9 @@ def get_cocktail_by_order_id(order_id: str) -> Optional[Dict[str, Any]]:
     """注文IDでカクテルを取得"""
     return supabase_client.get_cocktail_by_order_id(order_id)
 
-def get_all_cocktails(limit: int = None, offset: int = 0) -> Dict[str, Any]:
-    """全カクテルを取得（ページネーション対応）"""
-    return supabase_client.get_all_cocktails(limit=limit, offset=offset)
+def get_all_cocktails(limit: int = None, offset: int = 0, event_id: Union[str, uuid.UUID] = None) -> Dict[str, Any]:
+    """全カクテルを取得（ページネーション対応）、event_idでフィルター可能"""
+    return supabase_client.get_all_cocktails(limit=limit, offset=offset, event_id=event_id)
 
 def insert_poured_cocktail(data: dict) -> Optional[int]:
     """注がれたカクテルデータを挿入"""
@@ -81,3 +82,24 @@ def get_cocktail_prompt_by_type(cocktail_id: int, prompt_type: str):
 def initialize_default_prompts():
     """デフォルトプロンプトの初期化"""
     return supabase_client.initialize_default_prompts()
+
+# イベント関連の関数
+def get_events(is_active: bool = None):
+    """イベント一覧を取得"""
+    return supabase_client.get_events(is_active=is_active)
+
+def get_event_by_id(event_id: Union[str, uuid.UUID]):
+    """IDでイベントを取得"""
+    return supabase_client.get_event_by_id(event_id)
+
+def get_event_by_name(event_name: str):
+    """名前でイベントを取得"""
+    return supabase_client.get_event_by_name(event_name)
+
+def insert_event(data: dict):
+    """イベントを挿入"""
+    return supabase_client.insert_event(data)
+
+def update_event(event_id: Union[str, uuid.UUID], data: dict):
+    """イベントを更新"""
+    return supabase_client.update_event(event_id, data)
