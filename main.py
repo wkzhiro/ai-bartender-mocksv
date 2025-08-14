@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 import base64
@@ -154,6 +154,7 @@ async def get_order(order_id: Union[int, str], limit: int = None, offset: int = 
                     prompts_info[f'{prompt_type}_prompt'] = cp.get('prompts', {})
             
             result.append({
+                "id": c.get('id', ''),  # データベースのPrimary Keyを追加
                 "order_id": c.get('order_id', ''),
                 "name": c.get('name', ''),
                 "concept": c.get('comment', ''),
@@ -833,6 +834,91 @@ async def update_event(event_id: str, req: EventRequest):
         if not success:
             return {"result": "error", "detail": "イベントの更新に失敗しました"}
         return {"result": "success"}
+    except Exception as e:
+        return {"result": "error", "detail": str(e)}
+
+# 違反報告関連API
+
+def get_client_ip(request: Request) -> str:
+    """クライアントのIPアドレスを取得"""
+    # X-Forwarded-Forヘッダーをチェック（プロキシ経由の場合）
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    if forwarded_for:
+        # 最初のIPアドレスを取得（カンマ区切りの場合）
+        return forwarded_for.split(",")[0].strip()
+    
+    # X-Real-IPヘッダーをチェック（Nginx等のリバースプロキシ）
+    real_ip = request.headers.get("X-Real-IP")
+    if real_ip:
+        return real_ip.strip()
+    
+    # 直接接続の場合
+    client_host = request.client.host if request.client else "unknown"
+    return client_host
+
+class ViolationReportRequest(BaseModel):
+    cocktail_id: int
+    report_reason: str
+    report_category: str = 'inappropriate'  # 'inappropriate', 'offensive', 'spam', 'other'
+
+class HideCocktailRequest(BaseModel):
+    cocktail_id: int
+    reason: str = '違反報告により非表示'
+
+@app.post("/report-violation/")
+async def report_violation(req: ViolationReportRequest, request: Request):
+    """カクテルの違反を報告"""
+    try:
+        # クライアントのIPアドレスを取得
+        client_ip = get_client_ip(request)
+        print(f"違反報告: cocktail_id={req.cocktail_id}, client_ip={client_ip}")
+        
+        success = dbmodule.report_violation(
+            cocktail_id=req.cocktail_id,
+            reporter_ip=client_ip,
+            report_reason=req.report_reason,
+            report_category=req.report_category
+        )
+        
+        if success:
+            return {"result": "success", "message": "違反報告を受け付けました"}
+        else:
+            return {"result": "error", "detail": "既にこのIPアドレスから報告済みか、報告に失敗しました"}
+    except Exception as e:
+        return {"result": "error", "detail": str(e)}
+
+@app.post("/hide-cocktail/")
+async def hide_cocktail(req: HideCocktailRequest):
+    """カクテルを非表示にする"""
+    try:
+        success = dbmodule.hide_cocktail(req.cocktail_id, req.reason)
+        
+        if success:
+            return {"result": "success", "message": "カクテルを非表示にしました"}
+        else:
+            return {"result": "error", "detail": "カクテルの非表示に失敗しました"}
+    except Exception as e:
+        return {"result": "error", "detail": str(e)}
+
+@app.post("/show-cocktail/{cocktail_id}")
+async def show_cocktail(cocktail_id: int):
+    """カクテルを再表示する"""
+    try:
+        success = dbmodule.show_cocktail(cocktail_id)
+        
+        if success:
+            return {"result": "success", "message": "カクテルを再表示しました"}
+        else:
+            return {"result": "error", "detail": "カクテルの再表示に失敗しました"}
+    except Exception as e:
+        return {"result": "error", "detail": str(e)}
+
+@app.get("/violation-reports/")
+async def get_violation_reports(cocktail_id: int = None):
+    """違反報告一覧を取得"""
+    try:
+        reports = dbmodule.get_violation_reports(cocktail_id)
+        return {"result": "success", "reports": reports}
     except Exception as e:
         return {"result": "error", "detail": str(e)}
 

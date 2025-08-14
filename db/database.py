@@ -103,3 +103,92 @@ def insert_event(data: dict):
 def update_event(event_id: Union[str, uuid.UUID], data: dict):
     """イベントを更新"""
     return supabase_client.update_event(event_id, data)
+
+# 違反報告関連の関数
+
+def report_violation(cocktail_id: int, reporter_ip: str, report_reason: str, report_category: str = 'inappropriate'):
+    """カクテルに対する違反報告を追加（IPアドレスベース）"""
+    try:
+        # 既に同じIPアドレスから報告済みかチェック
+        existing = supabase_client.client.table('violation_reports').select('id').eq('cocktail_id', cocktail_id).eq('reporter_id', reporter_ip).execute()
+        if existing.data:
+            return False  # 既に報告済み
+        
+        # 違反報告を追加
+        result = supabase_client.client.table('violation_reports').insert({
+            'cocktail_id': cocktail_id,
+            'reporter_id': reporter_ip,
+            'report_reason': report_reason,
+            'report_category': report_category
+        }).execute()
+        
+        if result.data:
+            # カクテルの違反報告数を更新し、自動非表示処理を実行
+            count = update_violation_count(cocktail_id)
+            
+            # 違反報告があった場合は即座に非表示にする
+            if count >= 1:
+                hide_cocktail(cocktail_id, f"違反報告により非表示（報告数: {count}）")
+            
+            return True
+        return False
+    except Exception as e:
+        print(f"違反報告エラー: {e}")
+        return False
+
+def update_violation_count(cocktail_id: int):
+    """カクテルの違反報告数を更新"""
+    try:
+        # 違反報告数をカウント
+        count_result = supabase_client.client.table('violation_reports').select('id', count='exact').eq('cocktail_id', cocktail_id).execute()
+        count = count_result.count or 0
+        
+        # カクテルテーブルの違反報告数を更新
+        supabase_client.client.table('cocktails').update({'violation_reports_count': count}).eq('id', cocktail_id).execute()
+        
+        return count
+    except Exception as e:
+        print(f"違反報告数更新エラー: {e}")
+        return 0
+
+def hide_cocktail(cocktail_id: int, reason: str = '違反報告により非表示'):
+    """カクテルを非表示にする"""
+    try:
+        from datetime import datetime
+        result = supabase_client.client.table('cocktails').update({
+            'is_visible': False,
+            'hidden_at': datetime.now().isoformat(),
+            'hidden_reason': reason
+        }).eq('id', cocktail_id).execute()
+        
+        return len(result.data) > 0
+    except Exception as e:
+        print(f"カクテル非表示エラー: {e}")
+        return False
+
+def show_cocktail(cocktail_id: int):
+    """カクテルを再表示する"""
+    try:
+        result = supabase_client.client.table('cocktails').update({
+            'is_visible': True,
+            'hidden_at': None,
+            'hidden_reason': None
+        }).eq('id', cocktail_id).execute()
+        
+        return len(result.data) > 0
+    except Exception as e:
+        print(f"カクテル再表示エラー: {e}")
+        return False
+
+def get_violation_reports(cocktail_id: int = None):
+    """違反報告一覧を取得"""
+    try:
+        query = supabase_client.client.table('violation_reports').select('*')
+        if cocktail_id:
+            query = query.eq('cocktail_id', cocktail_id)
+        
+        result = query.order('created_at', desc=True).execute()
+        return result.data
+    except Exception as e:
+        print(f"違反報告取得エラー: {e}")
+        return []
