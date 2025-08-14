@@ -6,6 +6,7 @@ Pillow
 openai
 supabase
 sqlalchemy
+gunicorn
 
 # 旧MySQL関連（Supabase移行後は削除可能）
 # sqlalchemy

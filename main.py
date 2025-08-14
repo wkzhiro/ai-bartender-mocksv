@@ -8,6 +8,8 @@ from pydantic import BaseModel
 import uuid
 from PIL import Image
 import io
+import os
+import requests
 
 # SupabaseのDBモジュールを使用
 from db import database as dbmodule
@@ -331,6 +333,126 @@ def load_syrup_info_txt(path="storage/syrup.txt"):
         print(f"syrup.txtの読み込みエラー: {e}")
     return syrup_dict
 
+
+def load_fusion_filter_words(path="storage/FUSIONフィルタ_v1.0.csv"):
+    """FUSIONフィルタCSVを読み込み、フィルタ対象語句のリストを返す"""
+    filter_words = []
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = f.read().splitlines()
+        # 2行目から読み込み（1行目はヘッダー）
+        for line in lines[1:]:
+            if line.strip():
+                # 矢印の後の部分を取得
+                parts = line.split("→")
+                if len(parts) >= 2:
+                    word = parts[1].strip()
+                    if word:
+                        filter_words.append(word)
+    except Exception as e:
+        print(f"FUSIONフィルタCSVの読み込みエラー: {e}")
+    return filter_words
+
+
+def validate_cocktail_name(cocktail_name, filter_words):
+    """
+    カクテル名がフィルタ対象語句と競合しないか検証
+    部分一致、完全一致、または1文字の削除・追加・置換で一致する場合はFalseを返す
+    """
+    import difflib
+    
+    # カクテル名を正規化（スペース削除、大文字小文字統一）
+    normalized_name = cocktail_name.replace(" ", "").lower()
+    
+    for filter_word in filter_words:
+        normalized_filter = filter_word.replace(" ", "").lower()
+        
+        # 部分一致チェック - カクテル名にフィルタ語句が含まれているかチェック
+        if normalized_filter in normalized_name:
+            return False
+        
+        # 逆方向の部分一致チェック - フィルタ語句にカクテル名が含まれているかチェック
+        # （短いカクテル名が長いブランド名の一部と一致する場合）
+        if normalized_name in normalized_filter and len(normalized_name) >= 2:
+            return False
+        
+        # 編集距離（レーベンシュタイン距離）が1以下かチェック
+        # 1文字の追加、削除、置換で一致する場合
+        if len(normalized_name) > 0 and len(normalized_filter) > 0:
+            # difflib.SequenceMatcher を使用して類似度を計算
+            similarity = difflib.SequenceMatcher(None, normalized_name, normalized_filter).ratio()
+            
+            # 文字数の差が1以下で、類似度が高い場合
+            len_diff = abs(len(normalized_name) - len(normalized_filter))
+            if len_diff <= 1:
+                # 編集距離1の場合の類似度の閾値を設定
+                min_len = min(len(normalized_name), len(normalized_filter))
+                if min_len > 0:
+                    threshold = (min_len - 1) / min_len
+                    if similarity >= threshold:
+                        return False
+    
+    return True
+
+
+def regenerate_cocktail_name_with_mini_llm(cocktail_data, filter_words):
+    """
+    ミニLLMエンドポイントを使用してカクテル名を再生成
+    cocktail_data: 元のカクテル情報（concept, color, recipe等）
+    """
+    # ミニLLMエンドポイントを使用
+    api_key = os.environ.get("AZURE_OPENAI_API_KEY_LLM") or os.environ.get("OPENAI_API_KEY")
+    endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT_LLM_MINI")
+    
+    if not api_key or not endpoint:
+        print("Mini LLM APIキーまたはエンドポイントが設定されていません")
+        return None
+    
+    # システムプロンプト
+    system_prompt = """あなたはカクテルの名前を考えるプロの命名専門家です。
+以下の条件を厳守してカクテル名を提案してください：
+1. 既存のブランド名、企業名、商標、著作権のある名前を絶対に使用しない
+2. 提供されたコンセプトと色を反映した名前にする
+3. 日本語で20文字以内
+4. 創造的でオリジナルな名前にする
+5. 一般的な単語の組み合わせを使う"""
+
+    # ユーザープロンプト
+    user_prompt = f"""以下のカクテルに新しい名前を付けてください：
+コンセプト: {cocktail_data.get('concept', '')}
+色: {cocktail_data.get('color', '')}
+現在の名前「{cocktail_data.get('cocktail_name', '')}」は商標に抵触する可能性があるため使用できません。
+
+新しいカクテル名のみを返してください。説明は不要です。"""
+
+    headers = {
+        "api-key": api_key,
+        "Content-Type": "application/json"
+    }
+    
+    body = {
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ],
+        "max_tokens": 50,
+        "temperature": 0.8
+    }
+    
+    try:
+        res = requests.post(endpoint, headers=headers, json=body)
+        if res.ok:
+            result = res.json()
+            new_name = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+            # 新しい名前も検証
+            if new_name and validate_cocktail_name(new_name, filter_words):
+                return new_name
+    except Exception as e:
+        print(f"カクテル名再生成エラー: {e}")
+    
+    return None
+
+
 def upload_image_to_storage(image_base64: str, order_id: str) -> str:
     """画像をSupabase Storageにアップロードし、公開URLを返す"""
     try:
@@ -390,6 +512,7 @@ def build_recipe_system_prompt(syrup_dict, custom_prompt=None):
         base_prompt = (
             "あなたはプロのバーテンダーです。お客様の「最近の出来事」「キャリア」「趣味」の3つの要素を均等に重視し、バランス良くカクテルに反映させてください。"
             "カクテル名の作成時は、3つの要素から1つずつ特徴を取り入れるか、または全体のイメージを統合した名前にしてください。"
+            "重要：カクテル名には既存のブランド名、企業名、商標、著作権のある名前を絶対に使用しないでください。創造的でオリジナルな名前を考えてください。"
             "コンセプトも同様に、最近の出来事だけでなく、キャリアや趣味の要素も含めて総合的な印象を表現してください。"
             "以下のシロップ情報を参考に、入力された情報からカクテル風の名前（日本語で20文字以内）、"
             "そのカクテルのコンセプト文（日本語で1文）、生成AIでカクテルの画像を生成するためのメインカラー（液体の色）を表現する文章とメインカラーのRGB値、およびレシピ（シロップ名と比率のリスト、合計25%以内、色や味のイメージに合うように最大4種まで混ぜてOK）を考えてください。"
@@ -517,6 +640,31 @@ async def _create_cocktail_internal(req: CreateCocktailRequest, save_user_info: 
         target_rgb = color.get("target_rgb", "")
     else:
         target_rgb = ""
+
+    # カクテル名の検証とフィルタリング
+    filter_words = load_fusion_filter_words()
+    if not validate_cocktail_name(cocktail_name, filter_words):
+        print(f"カクテル名「{cocktail_name}」がフィルタに引っ掛かりました。再生成を試みます。")
+        
+        # 最大3回まで再生成を試みる
+        max_retries = 3
+        for retry in range(max_retries):
+            new_name = regenerate_cocktail_name_with_mini_llm({
+                'cocktail_name': cocktail_name,
+                'concept': concept,
+                'color': color
+            }, filter_words)
+            
+            if new_name:
+                print(f"新しいカクテル名: {new_name}")
+                cocktail_name = new_name
+                break
+        else:
+            # 再生成に失敗した場合、汎用的な名前を生成
+            import datetime
+            timestamp = datetime.datetime.now().strftime("%H%M%S")
+            cocktail_name = f"特製カクテル{timestamp}"
+            print(f"再生成に失敗したため、汎用名を使用: {cocktail_name}")
 
     # 3. order_idを6桁ランダムで生成（重複チェック付き）
     import random
@@ -914,12 +1062,44 @@ async def show_cocktail(cocktail_id: int):
         return {"result": "error", "detail": str(e)}
 
 @app.get("/violation-reports/")
-async def get_violation_reports(cocktail_id: int = None):
+async def get_violation_reports(cocktail_id: int = None, status: str = None, show_all: bool = False):
     """違反報告一覧を取得"""
     try:
-        reports = dbmodule.get_violation_reports(cocktail_id)
+        print(f"違反報告API呼び出し - cocktail_id: {cocktail_id}, status: {status}, show_all: {show_all}")
+        
+        # 一時的にすべてのステータスを表示（デバッグ用）
+        # show_all=Trueの場合はすべてのステータスを表示、そうでなければpending/reviewingのみ
+        if show_all:
+            status_filter = None  # すべてのステータスを表示
+        else:
+            # 一時的にすべてのステータスを表示
+            status_filter = None  # 指定されたステータスまたはデフォルト（pending/reviewing）
+            
+        reports = dbmodule.get_violation_reports(cocktail_id, status_filter, show_all)
+        print(f"API戻り値: {len(reports)}件の報告")
         return {"result": "success", "reports": reports}
     except Exception as e:
+        print(f"違反報告API例外: {e}")
+        return {"result": "error", "detail": str(e)}
+
+@app.put("/violation-reports/{report_id}/status")
+async def update_violation_report_status(report_id: int, status_data: dict):
+    """違反報告のステータスを更新"""
+    try:
+        print(f"ステータス更新リクエスト: report_id={report_id}, data={status_data}")
+        status = status_data.get("status")
+        if not status:
+            print("エラー: ステータスが指定されていません")
+            return {"result": "error", "detail": "ステータスが指定されていません"}
+        
+        success = dbmodule.update_violation_report_status(report_id, status)
+        print(f"ステータス更新結果: success={success}")
+        if success:
+            return {"result": "success"}
+        else:
+            return {"result": "error", "detail": "ステータス更新に失敗しました"}
+    except Exception as e:
+        print(f"ステータス更新例外: {e}")
         return {"result": "error", "detail": str(e)}
 
 # === ここまで追加 ===
