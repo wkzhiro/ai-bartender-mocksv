@@ -3,8 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 import base64
 import random
-from typing import Union, Optional
+from typing import Union, Optional, List, Dict, Any, Literal
 from pydantic import BaseModel
+from datetime import datetime
 import uuid
 from PIL import Image
 import io
@@ -286,6 +287,7 @@ class CreateCocktailRequest(BaseModel):
     recipe_prompt_id: Optional[int] = None  # レシピ生成用プロンプトID（省略可）
     image_prompt_id: Optional[int] = None  # 画像生成用プロンプトID（省略可）
     event_id: Optional[str] = None  # イベントID（省略可）
+    survey_responses: Optional[List[Dict[str, Any]]] = None  # アンケート回答データ（省略可）
 
 class CreateCocktailAnonymousRequest(BaseModel):
     recent_event: str
@@ -508,17 +510,26 @@ def build_recipe_system_prompt(syrup_dict, custom_prompt=None):
         # カスタムプロンプトがある場合は、それをベースに使用
         base_prompt = custom_prompt
     else:
-        # デフォルトプロンプト
+        # デフォルトプロンプト - アンケート回答に焦点を当てる
         base_prompt = (
-            "あなたはプロのバーテンダーです。お客様の「最近の出来事」「キャリア」「趣味」の3つの要素を均等に重視し、バランス良くカクテルに反映させてください。"
-            "カクテル名の作成時は、3つの要素から1つずつ特徴を取り入れるか、または全体のイメージを統合した名前にしてください。"
-            "重要：カクテル名には既存のブランド名、企業名、商標、著作権のある名前を絶対に使用しないでください。創造的でオリジナルな名前を考えてください。"
-            "コンセプトも同様に、最近の出来事だけでなく、キャリアや趣味の要素も含めて総合的な印象を表現してください。"
-            "以下のシロップ情報を参考に、入力された情報からカクテル風の名前（日本語で20文字以内）、"
-            "そのカクテルのコンセプト文（日本語で1文）、生成AIでカクテルの画像を生成するためのメインカラー（液体の色）を表現する文章とメインカラーのRGB値、およびレシピ（シロップ名と比率のリスト、合計25%以内、色や味のイメージに合うように最大4種まで混ぜてOK）を考えてください。"
-            "メインカラーは、4種のシロップの任意の比率での混合で作成できる色にしてください。"
-            "以下に記載するシロップの情報を元に、必ず上記のメインカラーの表現に合うようにシロップ比率を考えてください。"
-            "シロップのホワイトは0~10%で混ぜるようにしてください。また、出力は必ず次のJSON形式で返してください。"
+            "あなたは世界的に有名なバーテンダーです。お客様からのアンケート回答に基づいて、"
+            "その人の個性、感情、体験、価値観を深く理解し、それを一杯のカクテルに凝縮させることができます。"
+            "アンケートの各回答に隠された本質的な意味を読み取り、その人だけの特別なカクテルを創造してください。"
+            "\n\n"
+            "【カクテル作成の指針】\n"
+            "1. アンケート回答から、その人の現在の心情や状況を読み取る\n"
+            "2. 回答に表れる感情（喜び、期待、不安、達成感など）をカクテルの味わいに変換\n"
+            "3. その人の価値観や大切にしているものをカクテルのコンセプトに反映\n"
+            "4. イベントの文脈も考慮し、参加者同士の共通体験も意識する\n"
+            "\n"
+            "重要：カクテル名には既存のブランド名、企業名、商標、著作権のある名前を絶対に使用しないでください。"
+            "その人の回答から連想される、詩的で印象的なオリジナルの名前を考えてください。"
+            "\n"
+            "以下のシロップ情報を参考に、カクテル名（日本語で20文字以内）、"
+            "コンセプト文（その人の個性を表現する詩的な1文で50〜100文字）、メインカラー（液体の色）とRGB値、"
+            "およびレシピ（シロップ名と比率のリスト、合計25%以内、最大4種まで）を考えてください。"
+            "シロップのホワイトは0~10%で混ぜるようにしてください。"
+            "出力は必ず次のJSON形式で返してください。"
             "0％でも、ベリー、青りんご、シトラス、ホワイトの4つの配合はそれぞれ示すようにしてください。"
             "colorはstring型（例: \"春の陽だまりのような黄色（(246, 236, 55)）\"）で返してください。"
         )
@@ -594,14 +605,79 @@ async def _create_cocktail_internal(req: CreateCocktailRequest, save_user_info: 
             custom_recipe_prompt = prompt_data['prompt_text']
     
     systemPrompt = build_recipe_system_prompt(syrup_dict, custom_recipe_prompt)
-    userPrompt = (
-        f"【最近の出来事】（カクテルの雰囲気や感情面に反映）: {req.recent_event}\n"
-        f"【キャリア】（カクテルの力強さや構造に反映）: {req.career}\n"
-        f"【趣味】（カクテルの個性や独創性に反映）: {req.hobby}\n"
-        f"イベント名: {req.event_name}\n"
-        f"名前: {req.name}\n\n"
-        f"上記の3つの要素をそれぞれ活かし、バランスの取れたオリジナルカクテルを作成してください。"
-    )
+    
+    # イベント名を取得
+    event_name = req.event_name
+    if event_id:
+        event_data = dbmodule.get_event_by_id(event_id)
+        if event_data:
+            event_name = event_data.get('name', req.event_name)
+    
+    # アンケート回答データを質問文と共に取得
+    survey_info = ""
+    if req.survey_responses and event_id:
+        try:
+            # アンケートと質問情報を取得
+            surveys = dbmodule.get_surveys_by_event(event_id, is_active=True)
+            if surveys:
+                survey = dbmodule.get_survey_with_questions(surveys[0]['id'])
+                if survey and survey.get('questions'):
+                    survey_info = f"\n【イベント: {event_name}】\n"
+                    survey_info += f"アンケート: {survey.get('title', '')}\n"
+                    if survey.get('description'):
+                        survey_info += f"{survey['description']}\n"
+                    survey_info += "\n【回答内容】\n"
+                    
+                    # 質問IDと質問情報のマッピングを作成
+                    question_map = {}
+                    for q in survey['questions']:
+                        question_map[q['id']] = q
+                    
+                    # 回答を質問と共に整形
+                    for response in req.survey_responses:
+                        question_id = response.get('question_id', '')
+                        answer_text = response.get('answer_text', '')
+                        selected_option_ids = response.get('selected_option_ids', [])
+                        
+                        if question_id in question_map:
+                            question = question_map[question_id]
+                            survey_info += f"\n質問: {question['question_text']}\n"
+                            
+                            if answer_text:
+                                survey_info += f"回答: {answer_text}\n"
+                            elif selected_option_ids and question.get('options'):
+                                # 選択肢IDから選択肢テキストを取得
+                                selected_texts = []
+                                for option in question['options']:
+                                    if option['id'] in selected_option_ids:
+                                        selected_texts.append(option['option_text'])
+                                if selected_texts:
+                                    survey_info += f"回答: {', '.join(selected_texts)}\n"
+        except Exception as e:
+            print(f"アンケート情報取得エラー: {e}")
+            # エラーが発生しても基本的な情報で続行
+            survey_info = "\n【アンケート回答】\n"
+            for i, response in enumerate(req.survey_responses, 1):
+                answer_text = response.get('answer_text', '')
+                if answer_text:
+                    survey_info += f"回答{i}: {answer_text}\n"
+    
+    # ユーザープロンプトをアンケート中心に構成
+    if survey_info:
+        userPrompt = (
+            f"{survey_info}\n"
+            f"上記のアンケート回答から、この方の個性、感情、体験を読み取り、"
+            f"世界に一つだけの特別なカクテルを創造してください。"
+        )
+    else:
+        # アンケートがない場合の従来のプロンプト（簡略化）
+        userPrompt = (
+            f"イベント: {event_name}\n"
+            f"最近の出来事: {req.recent_event}\n"
+            f"キャリア: {req.career}\n"
+            f"趣味: {req.hobby}\n\n"
+            f"上記の情報から、この方だけの特別なカクテルを創造してください。"
+        )
     api_key = os.environ.get("AZURE_OPENAI_API_KEY_LLM") or os.environ.get("OPENAI_API_KEY")
     endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT_LLM")
     deployment_id = "gpt-4.1"
@@ -811,6 +887,34 @@ async def _create_cocktail_internal(req: CreateCocktailRequest, save_user_info: 
                 detail=f"DB insert failed. db_data={db_data}, inserted_id={inserted_id}"
             )
         
+        # アンケート回答データが含まれている場合、それも保存
+        if req.survey_responses and event_id:
+            try:
+                # 最初のアクティブなアンケートを取得してIDを取得
+                surveys = dbmodule.get_surveys_by_event(event_id, is_active=True)
+                if surveys:
+                    survey_id = surveys[0]['id']
+                    
+                    # アンケート回答データを準備
+                    answers_data = []
+                    for response in req.survey_responses:
+                        answer_data = {
+                            'question_id': response.get('question_id', ''),
+                            'answer_text': response.get('answer_text'),
+                            'selected_option_ids': response.get('selected_option_ids', [])
+                        }
+                        answers_data.append(answer_data)
+                    
+                    # アンケート回答を保存
+                    survey_response_id = dbmodule.submit_survey_response(survey_id, inserted_id, answers_data)
+                    if survey_response_id:
+                        print(f"アンケート回答も保存しました: response_id={survey_response_id}")
+                    else:
+                        print("アンケート回答の保存に失敗しましたが、カクテル作成は継続します")
+            except Exception as survey_error:
+                print(f"アンケート回答保存エラー: {survey_error}")
+                # エラーが発生してもカクテル作成は継続
+        
         # 使用したプロンプトIDをカクテルと関連付け
         if req.recipe_prompt_id:
             dbmodule.link_cocktail_prompt(inserted_id, req.recipe_prompt_id, 'recipe')
@@ -952,6 +1056,43 @@ class EventRequest(BaseModel):
     name: str
     description: str = ""
     is_active: bool = True
+
+# アンケート関連のPydanticモデル
+class QuestionOption(BaseModel):
+    option_text: str
+    display_order: int
+
+class SurveyQuestion(BaseModel):
+    question_type: Literal['text', 'single_choice', 'multiple_choice']
+    question_text: str
+    is_required: bool = False
+    display_order: int
+    options: Optional[List[QuestionOption]] = None
+
+class SurveyRequest(BaseModel):
+    title: str
+    description: Optional[str] = None
+    is_active: bool = True
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    questions: List[SurveyQuestion]
+
+class SurveyUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    questions: Optional[List[SurveyQuestion]] = None
+
+class AnswerData(BaseModel):
+    question_id: str
+    answer_text: Optional[str] = None
+    selected_option_ids: Optional[List[str]] = None
+
+class SurveyResponseRequest(BaseModel):
+    cocktail_id: Optional[int] = None
+    answers: List[AnswerData]
 
 @app.post("/events/")
 async def create_event(req: EventRequest):
@@ -1103,3 +1244,224 @@ async def update_violation_report_status(report_id: int, status_data: dict):
         return {"result": "error", "detail": str(e)}
 
 # === ここまで追加 ===
+
+# アンケート関連API
+
+@app.post("/events/{event_id}/surveys/")
+async def create_survey(event_id: str, req: SurveyRequest):
+    """イベントのアンケートを作成（質問含む）"""
+    try:
+        # アンケート基本情報
+        survey_data = {
+            'event_id': event_id,
+            'title': req.title,
+            'description': req.description,
+            'is_active': req.is_active,
+            'start_date': req.start_date.isoformat() if req.start_date else None,
+            'end_date': req.end_date.isoformat() if req.end_date else None
+        }
+        
+        # 質問データの準備
+        questions_data = []
+        for question in req.questions:
+            question_data = {
+                'question_type': question.question_type,
+                'question_text': question.question_text,
+                'is_required': question.is_required,
+                'display_order': question.display_order
+            }
+            
+            # 選択肢がある場合
+            if question.options:
+                question_data['options'] = [
+                    {
+                        'option_text': opt.option_text,
+                        'display_order': opt.display_order
+                    }
+                    for opt in question.options
+                ]
+            
+            questions_data.append(question_data)
+        
+        survey_id = dbmodule.create_survey_with_questions(survey_data, questions_data)
+        if not survey_id:
+            return {"result": "error", "detail": "アンケートの作成に失敗しました"}
+        
+        return {"result": "success", "survey_id": survey_id}
+    except Exception as e:
+        return {"result": "error", "detail": str(e)}
+
+@app.get("/events/{event_id}/surveys/")
+async def get_surveys_by_event(event_id: str, is_active: Optional[bool] = None):
+    """イベントのアンケート一覧を取得"""
+    try:
+        surveys = dbmodule.get_surveys_by_event(event_id, is_active)
+        return {"result": "success", "surveys": surveys}
+    except Exception as e:
+        return {"result": "error", "detail": str(e)}
+
+@app.get("/surveys/{survey_id}")
+async def get_survey(survey_id: str):
+    """アンケート詳細を取得"""
+    try:
+        survey = dbmodule.get_survey_with_questions(survey_id)
+        if not survey:
+            return {"result": "error", "detail": "アンケートが見つかりません"}
+        return {"result": "success", "survey": survey}
+    except Exception as e:
+        return {"result": "error", "detail": str(e)}
+
+@app.put("/surveys/{survey_id}")
+async def update_survey(survey_id: str, req: SurveyUpdateRequest):
+    """アンケート情報を更新（質問項目を含む）"""
+    try:
+        print(f"アンケート更新開始: survey_id={survey_id}")
+        print(f"リクエストデータ: {req.model_dump()}")
+        
+        # 基本情報の更新
+        update_data = {}
+        if req.title is not None:
+            update_data['title'] = req.title
+        if req.description is not None:
+            update_data['description'] = req.description
+        if req.is_active is not None:
+            update_data['is_active'] = req.is_active
+        if req.start_date is not None:
+            update_data['start_date'] = req.start_date.isoformat()
+        if req.end_date is not None:
+            update_data['end_date'] = req.end_date.isoformat()
+        
+        # 基本情報を更新
+        if update_data:
+            success = dbmodule.update_survey(survey_id, update_data)
+            if not success:
+                return {"result": "error", "detail": "アンケート基本情報の更新に失敗しました"}
+            print(f"基本情報更新成功: {update_data}")
+        
+        # 質問項目の更新
+        if req.questions is not None:
+            print(f"質問項目更新開始: {len(req.questions)}個の質問")
+            
+            # 既存の質問項目をすべて削除
+            delete_success = dbmodule.delete_survey_questions(survey_id)
+            if not delete_success:
+                return {"result": "error", "detail": "既存の質問項目削除に失敗しました"}
+            print("既存質問項目削除成功")
+            
+            # 新しい質問項目を追加
+            for i, question in enumerate(req.questions):
+                question_data = {
+                    'survey_id': survey_id,
+                    'question_type': question.question_type,
+                    'question_text': question.question_text,
+                    'is_required': question.is_required,
+                    'display_order': question.display_order or (i + 1),
+                    'options': question.options
+                }
+                
+                question_id = dbmodule.create_survey_question(question_data)
+                if not question_id:
+                    return {"result": "error", "detail": f"質問項目{i+1}の作成に失敗しました"}
+                print(f"質問項目{i+1}作成成功: question_id={question_id}")
+        
+        print("アンケート更新完了")
+        return {"result": "success"}
+        
+    except Exception as e:
+        print(f"アンケート更新エラー: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"result": "error", "detail": str(e)}
+
+@app.delete("/surveys/{survey_id}")
+async def delete_survey(survey_id: str):
+    """アンケートを削除"""
+    try:
+        success = dbmodule.delete_survey(survey_id)
+        if success:
+            return {"result": "success"}
+        else:
+            return {"result": "error", "detail": "アンケートの削除に失敗しました"}
+    except Exception as e:
+        return {"result": "error", "detail": str(e)}
+
+@app.get("/surveys/{survey_id}/form")
+async def get_survey_form(survey_id: str):
+    """回答用フォームデータを取得"""
+    try:
+        survey = dbmodule.get_survey_with_questions(survey_id)
+        if not survey:
+            return {"result": "error", "detail": "アンケートが見つかりません"}
+        
+        # アクティブでない場合はエラー
+        if not survey.get('is_active', True):
+            return {"result": "error", "detail": "このアンケートは現在利用できません"}
+        
+        # 期間チェック
+        now = datetime.now()
+        if survey.get('start_date') and datetime.fromisoformat(survey['start_date'].replace('Z', '+00:00')) > now:
+            return {"result": "error", "detail": "アンケート開始前です"}
+        
+        if survey.get('end_date') and datetime.fromisoformat(survey['end_date'].replace('Z', '+00:00')) < now:
+            return {"result": "error", "detail": "アンケートは終了しています"}
+        
+        return {"result": "success", "survey": survey}
+    except Exception as e:
+        return {"result": "error", "detail": str(e)}
+
+@app.post("/surveys/{survey_id}/responses/")
+async def submit_survey_response(survey_id: str, req: SurveyResponseRequest):
+    """アンケート回答を送信"""
+    try:
+        # アンケートの存在と有効性をチェック
+        survey = dbmodule.get_survey_with_questions(survey_id)
+        if not survey:
+            return {"result": "error", "detail": "アンケートが見つかりません"}
+        
+        if not survey.get('is_active', True):
+            return {"result": "error", "detail": "このアンケートは現在利用できません"}
+        
+        # 必須質問のバリデーション
+        required_questions = [q for q in survey.get('questions', []) if q.get('is_required', False)]
+        answered_question_ids = {answer.question_id for answer in req.answers}
+        
+        for required_q in required_questions:
+            if required_q['id'] not in answered_question_ids:
+                return {"result": "error", "detail": f"必須質問「{required_q['question_text']}」に回答してください"}
+        
+        # 回答データの準備
+        answers_data = []
+        for answer in req.answers:
+            answer_data = {
+                'question_id': answer.question_id,
+                'answer_text': answer.answer_text,
+                'selected_option_ids': answer.selected_option_ids or []
+            }
+            answers_data.append(answer_data)
+        
+        # アンケート回答をDBに保存
+        response_id = dbmodule.submit_survey_response(survey_id, req.cocktail_id, answers_data)
+        if not response_id:
+            return {"result": "error", "detail": "回答の保存に失敗しました"}
+        
+        return {"result": "success", "response_id": response_id}
+    except Exception as e:
+        return {"result": "error", "detail": str(e)}
+
+@app.get("/surveys/{survey_id}/responses/")
+async def get_survey_responses(survey_id: str, limit: Optional[int] = 50, offset: int = 0):
+    """アンケート回答一覧を取得"""
+    try:
+        responses_data = dbmodule.get_survey_responses(survey_id, limit, offset)
+        return {"result": "success", **responses_data}
+    except Exception as e:
+        return {"result": "error", "detail": str(e)}
+
+@app.get("/surveys/{survey_id}/statistics")
+async def get_survey_statistics(survey_id: str):
+    """アンケート集計結果を取得"""
+    try:
+        statistics = dbmodule.get_survey_statistics(survey_id)
+        return {"result": "success", "statistics": statistics}
+    except Exception as e:
+        return {"result": "error", "detail": str(e)}

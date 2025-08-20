@@ -320,3 +320,49 @@ def update_violation_report_status(report_id: int, status: str):
     except Exception as e:
         print(f"違反報告ステータス更新エラー: {e}")
         return False
+
+# アンケート関連の関数
+
+def create_survey(data: dict) -> Optional[str]:
+    """アンケートを作成"""
+    return supabase_client.create_survey(data)
+
+def create_survey_with_questions(survey_data: dict, questions: List[dict]) -> Optional[str]:
+    """アンケートを質問と選択肢とともに一括作成"""
+    return supabase_client.create_survey_with_questions(survey_data, questions)
+
+def get_surveys_by_event(event_id: str, is_active: bool = None) -> List[Dict[str, Any]]:
+    """イベントのアンケート一覧を取得"""
+    return supabase_client.get_surveys_by_event(event_id, is_active)
+
+def get_survey_with_questions(survey_id: str) -> Optional[Dict[str, Any]]:
+    """アンケート詳細を質問と選択肢とともに取得"""
+    return supabase_client.get_survey_with_questions(survey_id)
+
+def update_survey(survey_id: str, data: dict) -> bool:
+    """アンケートを更新"""
+    return supabase_client.update_survey(survey_id, data)
+
+def delete_survey(survey_id: str) -> bool:
+    """アンケートを削除"""
+    return supabase_client.delete_survey(survey_id)
+
+def delete_survey_questions(survey_id: str) -> bool:
+    """アンケートの質問項目をすべて削除"""
+    return supabase_client.delete_survey_questions(survey_id)
+
+def create_survey_question(question_data: dict) -> Optional[str]:
+    """アンケート質問項目を作成"""
+    return supabase_client.create_survey_question(question_data)
+
+def submit_survey_response(survey_id: str, cocktail_id: Optional[int], answers: List[Dict[str, Any]]) -> Optional[str]:
+    """アンケート回答を送信"""
+    return supabase_client.submit_survey_response(survey_id, cocktail_id, answers)
+
+def get_survey_responses(survey_id: str, limit: int = None, offset: int = 0) -> Dict[str, Any]:
+    """アンケート回答一覧を取得"""
+    return supabase_client.get_survey_responses(survey_id, limit, offset)
+
+def get_survey_statistics(survey_id: str) -> Dict[str, Any]:
+    """アンケート集計結果を取得"""
+    return supabase_client.get_survey_statistics(survey_id)

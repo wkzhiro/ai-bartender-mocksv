@@ -17,87 +17,18 @@ class SupabaseClient:
         self.client: Client = create_client(self.url, self.key)
     
     def create_tables(self):
-        """テーブル作成SQLをSupabaseで実行"""
-        # SQLクエリでテーブル作成
-        cocktails_sql = """
-        CREATE TABLE IF NOT EXISTS cocktails (
-            id SERIAL PRIMARY KEY,
-            order_id VARCHAR(32) UNIQUE NOT NULL,
-            status INTEGER,
-            name VARCHAR(128),
-            image TEXT,
-            flavor_ratio1 VARCHAR(16),
-            flavor_ratio2 VARCHAR(16),
-            flavor_ratio3 VARCHAR(16),
-            flavor_ratio4 VARCHAR(16),
-            comment TEXT,
-            recent_event TEXT,
-            event_name VARCHAR(128),
-            user_name VARCHAR(128),
-            career VARCHAR(128),
-            hobby VARCHAR(128),
-            recipe_prompt_id INTEGER REFERENCES prompts(id),
-            image_prompt_id INTEGER REFERENCES prompts(id),
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        );
-        """
-        
-        poured_cocktails_sql = """
-        CREATE TABLE IF NOT EXISTS poured_cocktails (
-            id SERIAL PRIMARY KEY,
-            poured VARCHAR(255) NOT NULL,
-            name VARCHAR(255) NOT NULL,
-            flavor_name1 VARCHAR(255) NOT NULL,
-            flavor_ratio1 VARCHAR(32) NOT NULL,
-            flavor_name2 VARCHAR(32) NOT NULL,
-            flavor_ratio2 VARCHAR(32) NOT NULL,
-            flavor_name3 VARCHAR(32) NOT NULL,
-            flavor_ratio3 VARCHAR(32) NOT NULL,
-            flavor_name4 VARCHAR(32) NOT NULL,
-            flavor_ratio4 VARCHAR(32) NOT NULL,
-            comment TEXT,
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        );
-        """
-        
-        prompts_sql = """
-        CREATE TABLE IF NOT EXISTS prompts (
-            id SERIAL PRIMARY KEY,
-            prompt_type VARCHAR(50) NOT NULL,
-            title VARCHAR(255) NOT NULL,
-            description TEXT,
-            prompt_text TEXT NOT NULL,
-            is_active BOOLEAN DEFAULT TRUE,
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        );
-        """
-        
-        cocktail_prompts_sql = """
-        CREATE TABLE IF NOT EXISTS cocktail_prompts (
-            id SERIAL PRIMARY KEY,
-            cocktail_id INTEGER NOT NULL REFERENCES cocktails(id) ON DELETE CASCADE,
-            prompt_id INTEGER NOT NULL REFERENCES prompts(id) ON DELETE CASCADE,
-            prompt_type VARCHAR(50) NOT NULL,
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-            UNIQUE(cocktail_id, prompt_type)
-        );
-        """
-        
-        try:
-            self.client.postgrest.rpc('exec_sql', {'sql': cocktails_sql}).execute()
-            self.client.postgrest.rpc('exec_sql', {'sql': poured_cocktails_sql}).execute()
-            self.client.postgrest.rpc('exec_sql', {'sql': prompts_sql}).execute()
-            self.client.postgrest.rpc('exec_sql', {'sql': cocktail_prompts_sql}).execute()
-            print("Supabaseテーブル作成完了")
-        except Exception as e:
-            print(f"テーブル作成エラー: {e}")
-            # RPCが使えない場合は手動でテーブル作成が必要
-            print("SupabaseダッシュボードでSQLエディタを使用してテーブルを作成してください:")
-            print(cocktails_sql)
-            print(poured_cocktails_sql)
-            print(prompts_sql)
-            print(cocktail_prompts_sql)
+        """新しいマイグレーションファイルを使用してテーブル作成"""
+        print("⚠️  新しいSupabaseプロジェクトでは、マイグレーションファイルを手動実行してください:")
+        print("\n📋 実行手順:")
+        print("1. Supabaseダッシュボード → SQL Editor")
+        print("2. 以下のファイルを順番に実行:")
+        print("   - migration/20250130_01_create_base_tables.sql")
+        print("   - migration/20250130_02_create_prompt_tables.sql") 
+        print("   - migration/20250130_03_create_violation_tables.sql")
+        print("   - migration/20250130_04_create_survey_tables.sql")
+        print("   - migration/20250130_05_create_indexes.sql")
+        print("   - migration/20250130_06_create_triggers.sql")
+        print("\n詳細は migration/migration_history.md を参照してください。")
     
     def insert_cocktail(self, data: Dict[str, Any]) -> Optional[int]:
         """カクテルデータを挿入"""
@@ -438,6 +369,354 @@ class SupabaseClient:
         except Exception as e:
             print(f"イベント更新エラー: {e}")
             return False
+    
+    # アンケート関連メソッド
+    def create_survey(self, data: Dict[str, Any]) -> Optional[str]:
+        """アンケートを作成"""
+        try:
+            result = self.client.table('surveys').insert(data).execute()
+            if result.data:
+                return str(result.data[0]['id'])
+            return None
+        except Exception as e:
+            print(f"アンケート作成エラー: {e}")
+            return None
+    
+    def create_survey_with_questions(self, survey_data: Dict[str, Any], questions: List[Dict[str, Any]]) -> Optional[str]:
+        """アンケートを質問と選択肢とともに一括作成"""
+        try:
+            # アンケート作成
+            survey_result = self.client.table('surveys').insert(survey_data).execute()
+            if not survey_result.data:
+                return None
+            
+            survey_id = str(survey_result.data[0]['id'])
+            
+            # 質問と選択肢を作成
+            for question_data in questions:
+                question_insert_data = {
+                    'survey_id': survey_id,
+                    'question_type': question_data['question_type'],
+                    'question_text': question_data['question_text'],
+                    'is_required': question_data.get('is_required', False),
+                    'display_order': question_data['display_order']
+                }
+                
+                question_result = self.client.table('survey_questions').insert(question_insert_data).execute()
+                if not question_result.data:
+                    continue
+                
+                question_id = str(question_result.data[0]['id'])
+                
+                # 選択肢がある場合は作成
+                if question_data.get('options'):
+                    options_data = []
+                    for i, option in enumerate(question_data['options']):
+                        options_data.append({
+                            'question_id': question_id,
+                            'option_text': option['option_text'],
+                            'display_order': option.get('display_order', i + 1)
+                        })
+                    
+                    if options_data:
+                        self.client.table('survey_question_options').insert(options_data).execute()
+            
+            return survey_id
+            
+        except Exception as e:
+            print(f"アンケート一括作成エラー: {e}")
+            return None
+    
+    def get_surveys_by_event(self, event_id: str, is_active: bool = None) -> List[Dict[str, Any]]:
+        """イベントのアンケート一覧を取得"""
+        try:
+            query = self.client.table('surveys').select('*').eq('event_id', event_id)
+            if is_active is not None:
+                query = query.eq('is_active', is_active)
+            result = query.order('created_at', desc=True).execute()
+            return result.data or []
+        except Exception as e:
+            print(f"アンケート一覧取得エラー: {e}")
+            return []
+    
+    def get_survey_with_questions(self, survey_id: str) -> Optional[Dict[str, Any]]:
+        """アンケート詳細を質問と選択肢とともに取得"""
+        try:
+            # アンケート基本情報取得
+            survey_result = self.client.table('surveys').select('*').eq('id', survey_id).execute()
+            if not survey_result.data:
+                return None
+            
+            survey = survey_result.data[0]
+            
+            # 質問一覧取得
+            questions_result = self.client.table('survey_questions').select('*').eq('survey_id', survey_id).order('display_order').execute()
+            questions = questions_result.data or []
+            
+            # 各質問の選択肢を取得
+            for question in questions:
+                options_result = self.client.table('survey_question_options').select('*').eq('question_id', question['id']).order('display_order').execute()
+                question['options'] = options_result.data or []
+            
+            survey['questions'] = questions
+            return survey
+            
+        except Exception as e:
+            print(f"アンケート詳細取得エラー: {e}")
+            return None
+    
+    def update_survey(self, survey_id: str, data: Dict[str, Any]) -> bool:
+        """アンケートを更新"""
+        try:
+            data['updated_at'] = datetime.now().isoformat()
+            result = self.client.table('surveys').update(data).eq('id', survey_id).execute()
+            return bool(result.data)
+        except Exception as e:
+            print(f"アンケート更新エラー: {e}")
+            return False
+    
+    def delete_survey(self, survey_id: str) -> bool:
+        """アンケートを削除"""
+        try:
+            result = self.client.table('surveys').delete().eq('id', survey_id).execute()
+            return bool(result.data)
+        except Exception as e:
+            print(f"アンケート削除エラー: {e}")
+            return False
+    
+    def delete_survey_questions(self, survey_id: str) -> bool:
+        """アンケートの質問項目をすべて削除"""
+        try:
+            # まず既存の質問項目を取得
+            questions_result = self.client.table('survey_questions').select('id').eq('survey_id', survey_id).execute()
+            
+            for question in questions_result.data:
+                # 各質問の選択肢を削除
+                self.client.table('survey_question_options').delete().eq('question_id', question['id']).execute()
+                # 各質問の回答を削除
+                self.client.table('survey_answers').delete().eq('question_id', question['id']).execute()
+            
+            # 質問項目を削除
+            self.client.table('survey_questions').delete().eq('survey_id', survey_id).execute()
+            
+            print(f"アンケート{survey_id}の質問項目削除完了")
+            return True
+        except Exception as e:
+            print(f"質問項目削除エラー: {e}")
+            return False
+    
+    def create_survey_question(self, question_data: dict) -> Optional[str]:
+        """アンケート質問項目を作成"""
+        try:
+            import uuid
+            
+            # 質問項目データの準備
+            question_insert_data = {
+                'id': str(uuid.uuid4()),
+                'survey_id': question_data['survey_id'],
+                'question_type': question_data['question_type'],
+                'question_text': question_data['question_text'],
+                'is_required': question_data.get('is_required', False),
+                'display_order': question_data.get('display_order', 1)
+            }
+            
+            # 質問項目を挿入
+            question_result = self.client.table('survey_questions').insert(question_insert_data).execute()
+            
+            if not question_result.data:
+                return None
+            
+            question_id = question_result.data[0]['id']
+            print(f"質問項目作成成功: {question_id}")
+            
+            # 選択肢がある場合は追加
+            options = question_data.get('options', [])
+            print(f"デバッグ: 選択肢データ = {options}")
+            print(f"デバッグ: 選択肢の型 = {type(options)}")
+            
+            if options and question_data['question_type'] in ['single_choice', 'multiple_choice']:
+                print(f"デバッグ: 選択肢作成開始 - {len(options)}個の選択肢")
+                for i, option in enumerate(options):
+                    print(f"デバッグ: 選択肢{i+1} = {option}, 型 = {type(option)}")
+                    
+                    # オプション属性の安全な取得
+                    if hasattr(option, 'option_text'):
+                        option_text = option.option_text
+                    elif isinstance(option, dict):
+                        option_text = option.get('option_text', '')
+                    else:
+                        option_text = ''
+                    
+                    if hasattr(option, 'display_order'):
+                        display_order = option.display_order
+                    elif isinstance(option, dict):
+                        display_order = option.get('display_order', i + 1)
+                    else:
+                        display_order = i + 1
+                    
+                    option_data = {
+                        'id': str(uuid.uuid4()),
+                        'question_id': question_id,
+                        'option_text': option_text,
+                        'display_order': display_order
+                    }
+                    
+                    print(f"デバッグ: 挿入する選択肢データ = {option_data}")
+                    
+                    try:
+                        option_result = self.client.table('survey_question_options').insert(option_data).execute()
+                        print(f"デバッグ: 選択肢挿入結果 = {option_result}")
+                        
+                        if option_result.data:
+                            print(f"選択肢作成成功: {option_data['option_text']}")
+                        else:
+                            print(f"選択肢作成失敗: {option_data['option_text']}")
+                    except Exception as option_error:
+                        print(f"選択肢作成エラー: {option_error}")
+                        import traceback
+                        traceback.print_exc()
+            else:
+                print(f"デバッグ: 選択肢作成をスキップ - options={bool(options)}, type={question_data['question_type']}")
+            
+            return question_id
+            
+        except Exception as e:
+            print(f"質問項目作成エラー: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
+    def submit_survey_response(self, survey_id: str, cocktail_id: Optional[int], answers: List[Dict[str, Any]]) -> Optional[str]:
+        """アンケート回答を送信"""
+        try:
+            # 回答レコード作成
+            response_data = {
+                'survey_id': survey_id,
+                'cocktail_id': cocktail_id
+            }
+            response_result = self.client.table('survey_responses').insert(response_data).execute()
+            if not response_result.data:
+                return None
+            
+            response_id = str(response_result.data[0]['id'])
+            
+            # 個別回答を保存
+            answers_data = []
+            for answer in answers:
+                answer_data = {
+                    'response_id': response_id,
+                    'question_id': answer['question_id'],
+                    'answer_text': answer.get('answer_text'),
+                    'selected_option_ids': answer.get('selected_option_ids', [])
+                }
+                answers_data.append(answer_data)
+            
+            if answers_data:
+                self.client.table('survey_answers').insert(answers_data).execute()
+            
+            return response_id
+            
+        except Exception as e:
+            print(f"アンケート回答送信エラー: {e}")
+            return None
+    
+    def get_survey_responses(self, survey_id: str, limit: int = None, offset: int = 0) -> Dict[str, Any]:
+        """アンケート回答一覧を取得"""
+        try:
+            query = self.client.table('survey_responses').select(
+                '*, survey_answers(*, survey_questions(question_text, question_type), survey_question_options(option_text))'
+            ).eq('survey_id', survey_id).order('submitted_at', desc=True)
+            
+            if limit:
+                query = query.limit(limit)
+            if offset > 0:
+                query = query.offset(offset)
+            
+            result = query.execute()
+            
+            # 総数取得
+            count_result = self.client.table('survey_responses').select('id', count='exact').eq('survey_id', survey_id).execute()
+            total_count = count_result.count or 0
+            
+            return {
+                'data': result.data or [],
+                'total_count': total_count,
+                'limit': limit,
+                'offset': offset
+            }
+            
+        except Exception as e:
+            print(f"アンケート回答一覧取得エラー: {e}")
+            return {
+                'data': [],
+                'total_count': 0,
+                'limit': limit,
+                'offset': offset
+            }
+    
+    def get_survey_statistics(self, survey_id: str) -> Dict[str, Any]:
+        """アンケート集計結果を取得"""
+        try:
+            # 回答総数
+            total_responses_result = self.client.table('survey_responses').select('id', count='exact').eq('survey_id', survey_id).execute()
+            total_responses = total_responses_result.count or 0
+            
+            # 質問一覧取得
+            questions_result = self.client.table('survey_questions').select('*').eq('survey_id', survey_id).order('display_order').execute()
+            questions = questions_result.data or []
+            
+            statistics = {
+                'survey_id': survey_id,
+                'total_responses': total_responses,
+                'questions': []
+            }
+            
+            for question in questions:
+                question_stat = {
+                    'question_id': question['id'],
+                    'question_text': question['question_text'],
+                    'question_type': question['question_type'],
+                    'responses': []
+                }
+                
+                if question['question_type'] == 'text':
+                    # テキスト回答の取得
+                    text_answers_result = self.client.table('survey_answers').select('answer_text').eq('question_id', question['id']).execute()
+                    question_stat['responses'] = [answer['answer_text'] for answer in (text_answers_result.data or []) if answer.get('answer_text')]
+                    
+                else:
+                    # 選択式の場合の集計
+                    options_result = self.client.table('survey_question_options').select('*').eq('question_id', question['id']).order('display_order').execute()
+                    options = options_result.data or []
+                    
+                    option_counts = {}
+                    for option in options:
+                        option_counts[option['id']] = {
+                            'option_text': option['option_text'],
+                            'count': 0
+                        }
+                    
+                    # 選択回答の集計
+                    choice_answers_result = self.client.table('survey_answers').select('selected_option_ids').eq('question_id', question['id']).execute()
+                    for answer in (choice_answers_result.data or []):
+                        if answer.get('selected_option_ids'):
+                            for option_id in answer['selected_option_ids']:
+                                if option_id in option_counts:
+                                    option_counts[option_id]['count'] += 1
+                    
+                    question_stat['option_statistics'] = option_counts
+                
+                statistics['questions'].append(question_stat)
+            
+            return statistics
+            
+        except Exception as e:
+            print(f"アンケート集計エラー: {e}")
+            return {
+                'survey_id': survey_id,
+                'total_responses': 0,
+                'questions': []
+            }
 
 # グローバルインスタンス
 supabase_client = SupabaseClient()
