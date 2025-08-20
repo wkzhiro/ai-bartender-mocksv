@@ -90,9 +90,9 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 - `event_id`: イベントID（オプション）
 - `survey_responses`: アンケート回答データ（オプション）
 
-#### ステップ2: レシピ生成（main.py:355-398行）
+#### ステップ2: レシピ生成
 
-**シロップ情報の読み込み（main.py:235-258行）**
+**シロップ情報の読み込み**
 ```
 4種類のシロップの特性情報を storage/syrup.txt から読み込み：
 - ベリー: ベリーレッド色、軽い甘さと穏やかな酸味、ラズベリーの香り
@@ -101,15 +101,29 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 - ホワイト: ホワイト色、穏やかな甘さと酸味、紅茶の深い味わい
 ```
 
-**AIプロンプト生成（main.py:497-536行）**
+**AIプロンプト生成**
 システムプロンプトには以下が含まれます：
-- プロのバーテンダーとしての役割設定
+- 世界的に有名なバーテンダーとしての役割設定
+- アンケート回答から個性・感情・価値観を読み取る指示
 - 4種類のシロップ情報と色の説明
 - 合計25%以内でのレシピ制約
 - ホワイトシロップは0-10%の制約
 - 日本語20文字以内のカクテル名制約
+- コンセプト文は50〜100文字の詩的な表現
 - **既存のブランド名・企業名を使用しない制約**
 - JSON形式での出力指定
+
+**アンケート回答の活用**
+アンケートがある場合、以下の形式でプロンプトに含まれます：
+```
+【イベント: イベント名】
+アンケート: アンケートタイトル
+アンケート説明
+
+【回答内容】
+質問: 質問文
+回答: 回答内容または選択された選択肢テキスト
+```
 
 **レスポンス例:**
 ```json
@@ -160,7 +174,7 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 - データベースでの重複チェック
 - 最大10回まで重複回避を試行
 
-#### ステップ6: データベース保存（main.py:759-824行）
+#### ステップ6: データベース保存
 生成されたデータは以下の形式でSupabaseに保存されます：
 
 **cocktailsテーブル構造:**
@@ -172,8 +186,15 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 - flavor_ratio1-4: 各シロップの配合比率
 - comment: カクテルのコンセプト
 - recent_event, event_name, user_name, career, hobby: ユーザー情報
+- event_id: イベントID
 - created_at: 作成日時
 ```
+
+**アンケート回答の保存**
+カクテル生成成功時、アンケート回答も自動的に保存されます：
+- survey_responsesテーブルに回答を保存
+- survey_answersテーブルに個別の回答内容を保存
+- カクテルIDと紐付けて管理
 
 ### 2. 匿名モード
 
@@ -196,13 +217,44 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ## 🔧 API エンドポイント
 
 ### カクテル生成
-- `POST /cocktail/` - 通常のカクテル生成（ユーザー情報保存）
+- `POST /cocktail/` - 通常のカクテル生成（ユーザー情報保存、アンケート回答対応）
 - `POST /cocktail/anonymous/` - 匿名カクテル生成
 
 ### カクテル取得
 - `GET /order/?order_id={注文番号}` - 特定カクテル取得
-- `GET /order/?order_id=all` - 全カクテル取得
+- `GET /order/?order_id=all&event_id={イベントID}` - 全カクテル取得（イベントフィルター対応）
 - `POST /order/` - 注文情報取得（POSTリクエスト）
+
+### イベント管理
+- `GET /events/` - イベント一覧取得
+- `GET /events/{event_id}` - イベント詳細取得
+- `POST /events/` - イベント作成
+- `PUT /events/{event_id}` - イベント更新
+
+### アンケート管理
+- `POST /events/{event_id}/surveys/` - アンケート作成
+- `GET /events/{event_id}/surveys/` - イベントのアンケート一覧取得
+- `GET /surveys/{survey_id}` - アンケート詳細取得（質問含む）
+- `PUT /surveys/{survey_id}` - アンケート更新
+- `DELETE /surveys/{survey_id}` - アンケート削除
+- `GET /surveys/{survey_id}/form` - 回答用フォーム取得
+- `POST /surveys/{survey_id}/responses/` - アンケート回答送信
+- `GET /surveys/{survey_id}/responses/` - アンケート回答一覧取得
+- `GET /surveys/{survey_id}/statistics` - アンケート集計結果取得
+
+### プロンプト管理
+- `GET /prompts/` - プロンプト一覧取得
+- `GET /prompts/{prompt_id}` - プロンプト詳細取得
+- `POST /prompts/` - プロンプト作成
+- `PUT /prompts/{prompt_id}` - プロンプト更新
+- `POST /prompts/initialize` - デフォルトプロンプト初期化
+
+### 違反報告
+- `POST /report-violation/` - 違反報告送信
+- `POST /hide-cocktail/` - カクテル非表示化
+- `POST /show-cocktail/{cocktail_id}` - カクテル再表示
+- `GET /violation-reports/` - 違反報告一覧取得
+- `PUT /violation-reports/{report_id}/status` - 違反報告ステータス更新
 
 ### その他
 - `POST /delivery/` - カクテル配送情報登録
