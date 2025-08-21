@@ -7,3 +7,5 @@ migration_env
 __pycache__
 *replace_usernames.py
 test
+main_original.py
+main_refactored.py

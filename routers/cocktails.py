@@ -1,0 +1,222 @@
+"""
+カクテル関連APIルーター
+"""
+from fastapi import APIRouter, HTTPException, Request
+from pathlib import Path
+import base64
+from typing import Dict, Any
+
+from models.requests import (
+    CreateCocktailRequest, 
+    CreateCocktailAnonymousRequest, 
+    CreateCocktailResponse,
+    SaveCocktailRequest,
+    OrderRequest,
+    DeriveryRequest
+)
+from services.cocktail_service import CocktailService
+from utils.image_utils import encode_image_to_base64, download_image_from_storage
+from utils.validation import get_client_ip
+from config.settings import settings
+from db import database as dbmodule
+
+router = APIRouter(prefix="/cocktail", tags=["cocktails"])
+
+# 注文番号に対応するレシピ情報（順不同）
+recipe_info = {
+    "123456": {
+        "name": "バジル・ブリーズ",
+        "comment": "鮮やかなエメラルドグリーンのカクテルで、フレッシュバジルの香りが引き立つ爽やかな味わい。ジンとライムリキュールをベースにしたハーバルな一杯。"
+    },
+    "234567": {
+        "name": "ゴールデン・サンセット",
+        "comment": "黄金色に輝くフルーティーなカクテル。パッションフルーツとアプリコットの甘酸っぱさが際立ち、チェリーのガーニッシュがアクセント。"
+    },
+    "345678": {
+        "name": "ディープ・ブルー・ナイト",
+        "comment": "濃厚なブルーの美しいカクテル。ブルーキュラソーとバイオレットリキュールを使った幻想的な味わいで、ブラックベリーのトッピングが深みを添える。"
+    }
+}
+
+
+def generate_response(order_id_str: str) -> dict:
+    """注文IDに対応するレスポンスを生成"""
+    
+    # Supabaseから取得
+    cocktail_data = dbmodule.get_cocktail_by_order_id(order_id_str)
+    if not cocktail_data:
+        raise HTTPException(status_code=404, detail="注文番号が無効です。")
+    
+    # 画像をSupabaseから取得してbase64に変換
+    image_data = ''
+    if order_id_str:
+        # order_idから画像ファイル名を生成
+        filename = f"cocktails/{order_id_str}.png"
+        base64_image = download_image_from_storage(filename)
+        if base64_image:
+            image_data = base64_image
+        else:
+            # ダウンロード失敗時は空文字
+            print(f"[WARNING] 画像ダウンロード失敗: order_id={order_id_str}")
+    
+    # データベースから取得した情報でレスポンスを構築
+    return {
+        "result": "success",
+        "id": cocktail_data.get('order_id', ''),
+        "name": cocktail_data.get('name', '不明なカクテル'),
+        "poured": 1,
+        "flavor_name1": "ベリー",
+        "flavor_ratio1": cocktail_data.get('flavor_ratio1', '0%'),
+        "flavor_name2": "青りんご", 
+        "flavor_ratio2": cocktail_data.get('flavor_ratio2', '0%'),
+        "flavor_name3": "シトラス",
+        "flavor_ratio3": cocktail_data.get('flavor_ratio3', '0%'),
+        "flavor_name4": "ホワイト",
+        "flavor_ratio4": cocktail_data.get('flavor_ratio4', '0%'),
+        "comment": cocktail_data.get('comment', ''),
+        "image_base64": image_data,
+    }
+
+
+@router.post("/save")
+def save_cocktail(request: SaveCocktailRequest):
+    """カクテルデータを保存"""
+    try:
+        # データベースに保存（画像はSupabase Storageに保存済みのため除外）
+        db_data = {
+            "order_id": request.order_id,
+            "status": request.status,
+            "name": request.name,
+            "comment": request.comment,
+            "recent_event": request.recent_event,
+            "event_name": request.event_name,
+            "user_name": request.user_name,
+            "career": request.career,
+            "hobby": request.hobby
+        }
+        
+        inserted_id = dbmodule.insert_cocktail(db_data)
+        if inserted_id:
+            return {"result": "success", "message": "カクテルが保存されました。", "id": inserted_id}
+        else:
+            raise HTTPException(status_code=500, detail="データベースへの保存に失敗しました。")
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"保存中にエラーが発生しました: {e}")
+
+
+@router.post("/order")
+def post_order(request: OrderRequest):
+    """注文処理"""
+    order_id_str = str(request.order_id)
+    return generate_response(order_id_str)
+
+
+@router.get("/order")
+def get_order(order_id: str):
+    """注文取得"""
+    return generate_response(order_id)
+
+
+@router.post("/delivery")
+def deliver_cocktail(request: DeriveryRequest):
+    """カクテル配送処理"""
+    try:
+        # 配送情報をデータベースに保存
+        delivery_data = {
+            "poured": request.poured,
+            "name": request.name,
+            "flavor_name1": request.flavor_name1,
+            "flavor_ratio1": request.flavor_ratio1,
+            "flavor_name2": request.flavor_name2,
+            "flavor_ratio2": request.flavor_ratio2,
+            "flavor_name3": request.flavor_name3,
+            "flavor_ratio3": request.flavor_ratio3,
+            "flavor_name4": request.flavor_name4,
+            "flavor_ratio4": request.flavor_ratio4,
+            "comment": request.comment
+        }
+        
+        # 注文IDを生成して保存（実際の実装では注文IDの管理が必要）
+        import random
+        order_id = str(random.randint(100000, 999999))
+        
+        response_data = {
+            "result": "success",
+            "id": order_id,
+            "name": request.name,
+            "poured": request.poured,
+            **{f"flavor_name{i}": getattr(request, f"flavor_name{i}") for i in range(1, 5)},
+            **{f"flavor_ratio{i}": getattr(request, f"flavor_ratio{i}") for i in range(1, 5)},
+            "comment": request.comment
+        }
+        
+        return response_data
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"配送処理中にエラーが発生しました: {e}")
+
+
+@router.get("/image/{order_id}")
+def get_cocktail_image(order_id: str):
+    """カクテル画像取得"""
+    try:
+        # まず静的ファイルから検索
+        image_path = Path(settings.IMAGE_FOLDER) / f"{order_id}.png"
+        if image_path.exists():
+            return {"image_base64": encode_image_to_base64(image_path)}
+        
+        # Supabaseから画像を取得
+        filename = f"cocktails/{order_id}.png"
+        base64_image = download_image_from_storage(filename)
+        if base64_image:
+            return {"image_base64": base64_image}
+        
+        raise HTTPException(status_code=404, detail="画像が見つかりません。")
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"画像取得中にエラーが発生しました: {e}")
+
+
+@router.get("/debug/count")
+def debug_cocktails_count():
+    """カクテル数のデバッグ情報"""
+    try:
+        count = dbmodule.get_cocktails_count()
+        return {"cocktails_count": count}
+    except Exception as e:
+        return {"error": str(e), "cocktails_count": 0}
+
+
+@router.post("/", response_model=CreateCocktailResponse)
+async def create_cocktail(req: CreateCocktailRequest):
+    """カクテル作成（ユーザー情報を保存、画像はSupabaseバケットに保存）"""
+    print("post request / test")
+    return await CocktailService.create_cocktail(req, save_user_info=req.save_user_info, use_storage=True)
+
+
+@router.post("/anonymous", response_model=CreateCocktailResponse)
+async def create_cocktail_anonymous(req: CreateCocktailAnonymousRequest):
+    """匿名カクテル作成（ユーザー情報は保存しない）"""
+    print("post request / anonymous")
+    # CreateCocktailRequestに変換（nameを空文字に）
+    cocktail_req = CreateCocktailRequest(
+        recent_event=req.recent_event,
+        event_name=req.event_name,
+        name="",  # 匿名なので空文字
+        career=req.career,
+        hobby=req.hobby,
+        prompt=req.prompt,
+        recipe_prompt_id=req.recipe_prompt_id,
+        image_prompt_id=req.image_prompt_id,
+        event_id=req.event_id,
+        survey_responses=req.survey_responses
+    )
+    return await CocktailService.create_cocktail(cocktail_req, save_user_info=False, use_storage=False)
+
+
+# 既存のorder_エンドポイント（互換性のため残す）
+@router.get("/order_")
+def order_(order_id: str):
+    """注文取得（レガシーエンドポイント）"""
+    return generate_response(order_id)

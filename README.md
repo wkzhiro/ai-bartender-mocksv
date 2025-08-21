@@ -6,7 +6,7 @@ AIを活用してパーソナライズされたカクテルレシピと画像を
 
 - **AIカクテル生成**: アンケート回答から個性や感情を読み取り、その人だけの特別なカクテルレシピを生成
 - **イベント別アンケート**: イベント毎に動的なアンケートフォームを作成・表示
-- **画像生成**: 生成されたカクテルに対応した透過背景のカクテル画像をAIで自動生成
+- **画像生成**: 生成されたカクテルに対応した透過背景のカクテル画像をAIで自動生成（Supabase Storageに保存）
 - **名前フィルタリング**: FUSIONフィルタによるブランド名・企業名の自動検証と再生成
 - **データベース管理**: Supabaseを使用したカクテルデータとアンケート回答の永続化
 - **プロンプト管理**: レシピ生成・画像生成用のプロンプトをカスタマイズ可能
@@ -182,13 +182,18 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 - order_id: 注文番号（6桁、ユニーク）
 - status: ステータス（デフォルト200）
 - name: カクテル名
-- image: base64エンコードされた画像データ
 - flavor_ratio1-4: 各シロップの配合比率
 - comment: カクテルのコンセプト
 - recent_event, event_name, user_name, career, hobby: ユーザー情報
 - event_id: イベントID
 - created_at: 作成日時
 ```
+
+**画像ストレージ**
+カクテル画像はSupabase Storageに保存されます：
+- 保存場所: `cocktail-images/cocktails/{order_id}.png`
+- ファイル名規則: order_idを使用した命名（例: `cocktails/123456.png`）
+- `/order/` エンドポイントでは画像をダウンロードしてbase64エンコードして返却
 
 **アンケート回答の保存**
 カクテル生成成功時、アンケート回答も自動的に保存されます：
@@ -208,6 +213,7 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 **個別取得 (`/order/` GET):**
 - 注文番号でカクテル情報を取得
+- 画像はSupabase Storageからダウンロードしてbase64エンコードして返却
 - main.py:129-163行で実装
 
 **全件取得 (`/order/?order_id=all`):**
@@ -221,9 +227,9 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 - `POST /cocktail/anonymous/` - 匿名カクテル生成
 
 ### カクテル取得
-- `GET /order/?order_id={注文番号}` - 特定カクテル取得
+- `GET /order/?order_id={注文番号}` - 特定カクテル取得（画像はbase64エンコード）
 - `GET /order/?order_id=all&event_id={イベントID}` - 全カクテル取得（イベントフィルター対応）
-- `POST /order/` - 注文情報取得（POSTリクエスト）
+- `POST /order/` - 注文情報取得（POSTリクエスト、画像はbase64エンコード）
 
 ### イベント管理
 - `GET /events/` - イベント一覧取得

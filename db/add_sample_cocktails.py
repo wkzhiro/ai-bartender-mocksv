@@ -62,7 +62,6 @@ for c in cocktail_data:
         "order_id": c["order_id"],
         "status": 200,
         "name": c["cocktail_name"],
-        "image": f"data:image/png;base64,{img_b64}",
         "flavor_ratio1": ratios[0],
         "flavor_ratio2": ratios[1],
         "flavor_ratio3": ratios[2],

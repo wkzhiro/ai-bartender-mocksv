@@ -63,6 +63,10 @@ def insert_prompt(data: dict):
     """プロンプトを挿入"""
     return supabase_client.insert_prompt(data)
 
+def create_prompt(data: dict):
+    """プロンプトを作成（insert_promptのエイリアス）"""
+    return insert_prompt(data)
+
 def update_prompt(prompt_id: int, data: dict):
     """プロンプトを更新"""
     return supabase_client.update_prompt(prompt_id, data)
@@ -87,6 +91,10 @@ def initialize_default_prompts():
 def get_events(is_active: bool = None):
     """イベント一覧を取得"""
     return supabase_client.get_events(is_active=is_active)
+
+def get_all_events():
+    """全イベントを取得（get_eventsのエイリアス）"""
+    return get_events(is_active=None)
 
 def get_event_by_id(event_id: Union[str, uuid.UUID]):
     """IDでイベントを取得"""
@@ -201,9 +209,9 @@ def get_violation_reports(cocktail_id: int = None, status_filter: str = None, sh
             *,
             cocktails (
                 id,
+                order_id,
                 name,
                 comment,
-                image,
                 flavor_ratio1,
                 flavor_ratio2,
                 flavor_ratio3,
@@ -257,17 +265,36 @@ def get_violation_reports(cocktail_id: int = None, status_filter: str = None, sh
             if cocktail.get('flavor_ratio4', '0%') != '0%':
                 recipe.append({'syrup': 'ホワイト', 'ratio': cocktail.get('flavor_ratio4', '0%')})
             
-            # 画像URLの処理（base64またはURLを判定）
-            image_data = cocktail.get('image', '')
-            if image_data.startswith('data:image') or image_data.startswith('http'):
-                image_url = image_data
+            # 画像URLの処理（バケットから取得）
+            order_id = cocktail.get('order_id', '')
+            if order_id:
+                # Supabaseバケットから画像URLを生成
+                # ファイルパスは `cocktails/{order_id}.png` の形式
+                filename = f"cocktails/{order_id}.png"
+                url_response = supabase_client.client.storage.from_("cocktail-images").get_public_url(filename)
+                
+                # URL レスポンスの構造を確認
+                if hasattr(url_response, 'public_url'):
+                    image_url = url_response.public_url
+                elif hasattr(url_response, 'publicURL'):
+                    image_url = url_response.publicURL
+                elif isinstance(url_response, str):
+                    image_url = url_response
+                elif isinstance(url_response, dict):
+                    image_url = url_response.get('public_url') or url_response.get('publicURL') or ''
+                else:
+                    image_url = str(url_response) if url_response else ''
+                
+                # URL の末尾に余分な ? があれば削除
+                if image_url and image_url.endswith('?'):
+                    image_url = image_url.rstrip('?')
             else:
-                # base64の場合はdata URLに変換
-                image_url = f"data:image/png;base64,{image_data}" if image_data else ''
+                image_url = ''
             
             formatted_report = {
                 'id': report['id'],
                 'cocktail_id': report['cocktail_id'],
+                'order_id': cocktail.get('order_id', ''),  # 注文番号を追加
                 'cocktail_name': cocktail.get('name', ''),
                 'cocktail_creator': cocktail.get('user_name', ''),
                 'cocktail_concept': cocktail.get('comment', ''),
@@ -366,3 +393,71 @@ def get_survey_responses(survey_id: str, limit: int = None, offset: int = 0) -> 
 def get_survey_statistics(survey_id: str) -> Dict[str, Any]:
     """アンケート集計結果を取得"""
     return supabase_client.get_survey_statistics(survey_id)
+
+def create_question_option(option_data: dict) -> Optional[str]:
+    """質問の選択肢を作成"""
+    return supabase_client.create_question_option(option_data)
+
+# その他の不足メソッド
+def get_cocktail_by_id(cocktail_id: int) -> Optional[Dict[str, Any]]:
+    """IDでカクテルを取得"""
+    try:
+        result = supabase_client.client.table('cocktails').select('*').eq('id', cocktail_id).execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        print(f"カクテル取得エラー: {e}")
+        return None
+
+def get_cocktails_count_by_event(event_id: Union[str, uuid.UUID]) -> int:
+    """イベントのカクテル数を取得"""
+    try:
+        result = supabase_client.client.table('cocktails').select('id', count='exact').eq('event_id', str(event_id)).execute()
+        return result.count or 0
+    except Exception as e:
+        print(f"イベントカクテル数取得エラー: {e}")
+        return 0
+
+def get_violation_report_by_cocktail_and_reporter(cocktail_id: int, reporter_ip: str) -> Optional[Dict[str, Any]]:
+    """カクテルIDと報告者IPで違反報告を取得"""
+    try:
+        result = supabase_client.client.table('violation_reports').select('*').eq('cocktail_id', cocktail_id).eq('reporter_id', reporter_ip).execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        print(f"違反報告取得エラー: {e}")
+        return None
+
+def get_violation_reports_count(cocktail_id: int) -> int:
+    """カクテルの違反報告数を取得"""
+    try:
+        result = supabase_client.client.table('violation_reports').select('id', count='exact').eq('cocktail_id', cocktail_id).execute()
+        return result.count or 0
+    except Exception as e:
+        print(f"違反報告数取得エラー: {e}")
+        return 0
+
+def get_violation_report_by_id(report_id: int) -> Optional[Dict[str, Any]]:
+    """IDで違反報告を取得"""
+    try:
+        result = supabase_client.client.table('violation_reports').select('*').eq('id', report_id).execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        print(f"違反報告取得エラー: {e}")
+        return None
+
+def get_hidden_cocktails_count() -> int:
+    """非表示カクテル数を取得"""
+    try:
+        result = supabase_client.client.table('cocktails').select('id', count='exact').eq('is_visible', False).execute()
+        return result.count or 0
+    except Exception as e:
+        print(f"非表示カクテル数取得エラー: {e}")
+        return 0
+
+def get_cocktails_count() -> int:
+    """全カクテル数を取得"""
+    try:
+        result = supabase_client.client.table('cocktails').select('id', count='exact').execute()
+        return result.count or 0
+    except Exception as e:
+        print(f"カクテル数取得エラー: {e}")
+        return 0

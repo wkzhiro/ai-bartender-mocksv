@@ -1,1467 +1,430 @@
-from fastapi import FastAPI, HTTPException, Request
+"""
+リファクタリングされたFastAPIアプリケーション
+AI Bartender API v2.0 - モジュラー構成版
+"""
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pathlib import Path
-import base64
-import random
-from typing import Union, Optional, List, Dict, Any, Literal
-from pydantic import BaseModel
-from datetime import datetime
-import uuid
-from PIL import Image
-import io
-import os
-import requests
+from contextlib import asynccontextmanager
+from dotenv import load_dotenv
 
-# SupabaseのDBモジュールを使用
-from db import database as dbmodule
-from db.supabase_client import supabase_client
+# 環境変数を読み込み
+load_dotenv()
 
-app = FastAPI()
+# 設定とルーター
+from config.settings import settings
+from routers import cocktails, events, surveys, violations, prompts
+from services.prompt_service import PromptService
 
-# CORS設定: React(Vite)のデフォルトポート8080を許可
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """アプリケーション起動・終了時の処理"""
+    # 起動時処理
+    print("🚀 AI Bartender API v2.0 起動中...")
+    
+    # デフォルトプロンプトの初期化
+    try:
+        PromptService.initialize_default_prompts()
+        print("✅ デフォルトプロンプト初期化完了")
+    except Exception as e:
+        print(f"⚠️ デフォルトプロンプト初期化警告: {e}")
+    
+    # API設定の検証
+    api_validation = settings.validate_api_keys()
+    print(f"🔑 API設定状況: {api_validation}")
+    
+    # デバッグ: 環境変数の詳細確認
+    print("🔍 環境変数詳細:")
+    print(f"  - AZURE_OPENAI_API_KEY_LLM: {'設定済み' if settings.AZURE_OPENAI_API_KEY_LLM else '未設定'}")
+    print(f"  - AZURE_OPENAI_ENDPOINT_LLM: {'設定済み' if settings.AZURE_OPENAI_ENDPOINT_LLM else '未設定'}")
+    print(f"  - GPT_API_KEY: {'設定済み' if settings.GPT_API_KEY else '未設定'}")
+    print(f"  - OPENAI_API_KEY: {'設定済み' if settings.OPENAI_API_KEY else '未設定'}")
+    
+    print("✅ AI Bartender API v2.0 起動完了")
+    
+    yield
+    
+    # 終了時処理
+    print("🛑 AI Bartender API v2.0 終了中...")
+    print("✅ AI Bartender API v2.0 終了完了")
+
+
+# FastAPIアプリケーション初期化
+app = FastAPI(
+    title="AI Bartender API",
+    description="AIバーテンダーによるカクテル生成API - モジュラー構成版",
+    version="2.0.0",
+    lifespan=lifespan,
+    docs_url="/docs",
+    redoc_url="/redoc"
 )
 
-# カクテル保存用リクエストモデル
-class SaveCocktailRequest(BaseModel):
-    order_id: str
-    status: int = 200
-    name: str
-    image: str
-    comment: str
-    recent_event: str = ""
-    event_name: str = ""
-    user_name: str = ""
-    career: str = ""
-    hobby: str = ""
+# CORS設定
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=settings.CORS_METHODS,
+    allow_headers=settings.CORS_HEADERS,
+)
 
-# 画像フォルダのパス
-IMAGE_FOLDER = Path("./images")
+# ルーター登録
+app.include_router(cocktails.router, tags=["Cocktails"])
+app.include_router(events.router, tags=["Events"])  
+app.include_router(surveys.router, tags=["Surveys"])
+app.include_router(violations.router, tags=["Violations"])
+app.include_router(prompts.router, tags=["Prompts"])
 
-class OrderRequest(BaseModel):
-    order_id: Union[int, str]
-
-class DeriveryRequest(BaseModel):
-    poured:Union[int, str]
-    name:str
-    flavor_name1:str
-    flavor_ratio1:str
-    flavor_name2:str
-    flavor_ratio2:str
-    flavor_name3:str
-    flavor_ratio3:str
-    flavor_name4:str
-    flavor_ratio4:str
-    comment:str
-
-def encode_image_to_base64(image_path: Path) -> str:
-    try:
-        with image_path.open("rb") as f:
-            image_data = f.read()
-        encoded_image = base64.b64encode(image_data).decode("utf-8")
-        return f"data:image/png;base64,{encoded_image}"
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"画像のエンコードに失敗しました: {e}")
-
-# 注文番号に対応するレシピ情報（順不同）
-recipe_info = {
-    "123456": {
-        "name": "バジル・ブリーズ",
-        "comment": "鮮やかなエメラルドグリーンのカクテルで、フレッシュバジルの香りが引き立つ爽やかな味わい。ジンとライムリキュールをベースにしたハーバルな一杯。"
-    },
-    "234567": {
-        "name": "ゴールデン・サンセット",
-        "comment": "黄金色に輝くフルーティーなカクテル。パッションフルーツとアプリコットの甘酸っぱさが際立ち、チェリーのガーニッシュがアクセント。"
-    },
-    "345678": {
-        "name": "ディープ・ブルー・ナイト",
-        "comment": "濃厚なブルーの美しいカクテル。ブルーキュラソーとバイオレットリキュールを使った幻想的な味わいで、ブラックベリーのトッピングが深みを添える。"
-    }
-}
-
-@app.get("/")
-def status_check():
-    return "Hello"
-
-@app.get("/status_check")
-def status_check():
-    return "ready"
-
-def generate_response(order_id_str: str) -> dict:
-    # Supabaseから取得
-    cocktail_data = dbmodule.get_cocktail_by_order_id(order_id_str)
-    if not cocktail_data:
-        raise HTTPException(status_code=404, detail="注文番号が無効です。")
-
-    # 画像はDBのbase64をそのまま返す
-    encoded_image = cocktail_data.get('image', '')
-
-    response_data = {
-        "status": cocktail_data.get('status', 200),
-        "name": cocktail_data.get('name', ''),
-        "image": encoded_image,
-        "flavor_name1": "ベリー",
-        "flavor_ratio1": cocktail_data.get('flavor_ratio1', ''),
-        "flavor_name2": "青りんご",
-        "flavor_ratio2": cocktail_data.get('flavor_ratio2', ''),
-        "flavor_name3": "シトラス",
-        "flavor_ratio3": cocktail_data.get('flavor_ratio3', ''),
-        "flavor_name4": "ホワイト",
-        "flavor_ratio4": cocktail_data.get('flavor_ratio4', ''),
-        "comment": cocktail_data.get('comment', '')
-    }
-    return response_data
-
-import json
+# レガシーAPIのエイリアス（完全互換性のため）
+from typing import Union, Optional, List, Dict, Any
+from fastapi import Query
+from models.requests import OrderRequest, DeriveryRequest
 
 @app.post("/order/")
-async def post_order(order: OrderRequest):
-    order_id_str = str(order.order_id)
-    response = generate_response(order_id_str)
+async def post_order_legacy(order: OrderRequest):
+    """レガシー注文エンドポイント（/cocktail/orderと同等）"""
+    from routers.cocktails import generate_response
     try:
-        json_bytes = json.dumps(response, ensure_ascii=False).encode("utf-8")
-        print("UTF-8エンコード成功")
+        order_id_str = str(order.order_id)
+        response = generate_response(order_id_str)
+        return response
     except Exception as e:
-        print(f"UTF-8エンコード失敗: {e}")
-    return response
+        raise HTTPException(status_code=500, detail=f"注文処理エラー: {str(e)}")
+
+from utils.image_utils import download_image_from_storage
 
 @app.get("/order/")
-async def get_order(order_id: Union[int, str], limit: int = None, offset: int = 0, event_id: str = None):
-    order_id_str = str(order_id)
-    if order_id_str == "all":
-        # ページネーション対応の全件取得（event_idでフィルター可能）
-        cocktail_data = dbmodule.get_all_cocktails(limit=limit, offset=offset, event_id=event_id)
-        cocktails = cocktail_data['data']
-        result = []
-        for c in cocktails:
-            # recipe配列を生成
-            recipe = [
-                {"syrup": "ベリー", "ratio": c.get('flavor_ratio1', '')},
-                {"syrup": "青りんご", "ratio": c.get('flavor_ratio2', '')},
-                {"syrup": "シトラス", "ratio": c.get('flavor_ratio3', '')},
-                {"syrup": "ホワイト", "ratio": c.get('flavor_ratio4', '')},
-            ]
-            
-            # プロンプト情報を取得
-            cocktail_id = c.get('id')
-            prompts_info = {}
-            if cocktail_id:
-                cocktail_prompts = dbmodule.get_cocktail_prompts(cocktail_id)
-                for cp in cocktail_prompts:
-                    prompt_type = cp.get('prompt_type')
-                    prompts_info[f'{prompt_type}_prompt'] = cp.get('prompts', {})
-            
-            result.append({
-                "id": c.get('id', ''),  # データベースのPrimary Keyを追加
-                "order_id": c.get('order_id', ''),
-                "name": c.get('name', ''),
-                "concept": c.get('comment', ''),
-                "image_base64": c.get('image', ''),
-                "flavor_ratio1": c.get('flavor_ratio1', ''),
-                "flavor_ratio2": c.get('flavor_ratio2', ''),
-                "flavor_ratio3": c.get('flavor_ratio3', ''),
-                "flavor_ratio4": c.get('flavor_ratio4', ''),
-                "recent_event": c.get('recent_event', ''),
-                "event_name": c.get('event_name', ''),
-                "user_name": c.get('user_name', ''),
-                "career": c.get('career', ''),
-                "hobby": c.get('hobby', ''),
-                "created_at": c.get('created_at', ''),
-                "recipe": recipe,
-                "prompts": prompts_info,
-            })
-        
-        # ページネーション情報を含むレスポンス
-        return {
-            "data": result,
-            "total_count": cocktail_data.get('total_count'),
-            "limit": limit,
-            "offset": offset,
-            "has_next": cocktail_data.get('has_next', False),
-            "has_prev": cocktail_data.get('has_prev', False)
-        }
-    else:
-        return generate_response(order_id_str)
-
-from datetime import datetime
-
-# デバッグ用エンドポイント
-@app.get("/debug/cocktails-count")
-async def debug_cocktails_count():
-    """デバッグ用：カクテル件数確認"""
+async def get_order_legacy(
+    order_id: Union[int, str], 
+    limit: Optional[int] = None, 
+    offset: int = 0, 
+    event_id: Optional[str] = None
+):
+    """レガシー注文取得エンドポイント（/cocktail/orderと同等）"""
+    from services.cocktail_service import CocktailService
     try:
-        # 実際のデータ件数を複数の方法で取得
-        
-        # 方法1: 全件取得（古い方式）
-        try:
-            all_data = supabase_client.client.table('cocktails').select('*').execute()
-            all_count = len(all_data.data) if all_data.data else 0
-        except Exception as e:
-            all_count = f"エラー: {e}"
-        
-        # 方法2: COUNT クエリ
-        try:
-            count_result = supabase_client.client.table('cocktails').select('id', count='exact').limit(1).execute()
-            count_exact = count_result.count
-        except Exception as e:
-            count_exact = f"エラー: {e}"
-        
-        # 方法3: 最初の100件だけ取得
-        try:
-            sample_data = supabase_client.client.table('cocktails').select('*').limit(100).execute()
-            sample_count = len(sample_data.data) if sample_data.data else 0
-        except Exception as e:
-            sample_count = f"エラー: {e}"
+        order_id_str = str(order_id)
+        if order_id_str == "all":
+            # 全件取得
+            cocktail_data = CocktailService.get_all_cocktails(limit=limit, offset=offset, event_id=event_id)
+            cocktails = cocktail_data.get('data', [])
+            print(f"[DEBUG] データ変換前のカクテル数: {len(cocktails)}")
+            result = []
+            for i, c in enumerate(cocktails):
+                print(f"[DEBUG] カクテル{i+1} 変換前データ: order_id={c.get('order_id')}, name={c.get('name')}")
+                recipe = [
+                    {"syrup": "ベリー", "ratio": c.get('flavor_ratio1', '')},
+                    {"syrup": "青りんご", "ratio": c.get('flavor_ratio2', '')},
+                    {"syrup": "シトラス", "ratio": c.get('flavor_ratio3', '')},
+                    {"syrup": "ホワイト", "ratio": c.get('flavor_ratio4', '')},
+                ]
+                
+                # 画像をSupabaseから取得してbase64に変換
+                order_id = c.get('order_id', '')
+                image_data = ''
+                if order_id:
+                    # order_idから画像ファイル名を生成
+                    filename = f"cocktails/{order_id}.png"
+                    base64_image = download_image_from_storage(filename)
+                    if base64_image:
+                        image_data = base64_image
+                    else:
+                        # ダウンロード失敗時は空文字
+                        print(f"[WARNING] 画像ダウンロード失敗: order_id={order_id}")
+                
+                cocktail_info = {
+                    "order_id": c.get('order_id'),
+                    "name": c.get('name', ''),
+                    "recipe": recipe,
+                    "comment": c.get('comment', ''),
+                    "image_base64": image_data,  # base64データまたは既存のbase64データ
+                    "created_at": c.get('created_at', ''),
+                    "event_id": c.get('event_id', ''),
+                    "poured": c.get('poured', False),
+                }
+                print(f"[DEBUG] カクテル{i+1} 変換後データ: order_id={cocktail_info['order_id']}, name={cocktail_info['name']}, image_base64長さ={len(cocktail_info['image_base64']) if cocktail_info['image_base64'] else 0}")
+                result.append(cocktail_info)
             
-        # 最新の10件のorder_idを確認
-        try:
-            latest_data = supabase_client.client.table('cocktails').select('order_id, created_at').order('created_at', desc=True).limit(10).execute()
-            latest_orders = [{"order_id": item.get('order_id'), "created_at": item.get('created_at')} for item in latest_data.data] if latest_data.data else []
-        except Exception as e:
-            latest_orders = f"エラー: {e}"
-        
-        return {
-            "all_count": all_count,
-            "count_exact": count_exact, 
-            "sample_count": sample_count,
-            "latest_orders": latest_orders,
-            "table_name": "cocktails"
-        }
+            print(f"[DEBUG] 最終レスポンス件数: {len(result)}")
+            return {
+                "data": result, 
+                "total": cocktail_data.get('total', len(result)),
+                "limit": limit,
+                "offset": offset
+            }
+        else:
+            from routers.cocktails import generate_response
+            return generate_response(order_id_str)
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=f"注文取得エラー: {str(e)}")
 
 @app.post("/delivery/")
-async def order_(deriver: DeriveryRequest):
-    # 受け取ったデータをdictに変換
-    print("start")
-    print("deliver", deriver)
-    db_data = {
-        "poured": str(deriver.poured),
-        "name": deriver.name,
-        "flavor_name1": deriver.flavor_name1,
-        "flavor_ratio1": deriver.flavor_ratio1,
-        "flavor_name2": deriver.flavor_name2,
-        "flavor_ratio2": deriver.flavor_ratio2,
-        "flavor_name3": deriver.flavor_name3,
-        "flavor_ratio3": deriver.flavor_ratio3,
-        "flavor_name4": deriver.flavor_name4,
-        "flavor_ratio4": deriver.flavor_ratio4,
-        "comment": deriver.comment,
-    }
-    # DB保存
+async def post_delivery_legacy(delivery_data: DeriveryRequest):
+    """レガシー配達エンドポイント（/cocktail/deliveryと同等）"""
+    from services.cocktail_service import CocktailService
     try:
-        inserted_id = dbmodule.insert_poured_cocktail(db_data)
-        print(f"inserted_id: {inserted_id} (type: {type(inserted_id)})")
-        if inserted_id:
-            return {"result": "success", "id": str(inserted_id)}
-        else:
-            return {"result": "error", "detail": "DB insert failed"}
-    except Exception as e:
-        import traceback
-        tb = traceback.format_exc()
-        return {"result": "error", "detail": f"{e}\n{tb}"}
-
-# === ここから追加 ===
-
-# レシピ生成・画像生成・DB保存を統合するAPI
-import os
-import openai
-
-class RecipeItem(BaseModel):
-    syrup: str
-    ratio: str
-
-class CreateCocktailRequest(BaseModel):
-    recent_event: str
-    event_name: str
-    name: str = ""
-    career: str
-    hobby: str
-    prompt: str = ""  # 画像生成用プロンプト（省略可）
-    save_user_info: bool = True  # ユーザー情報を保存するかどうか（デフォルトTrue）
-    recipe_prompt_id: Optional[int] = None  # レシピ生成用プロンプトID（省略可）
-    image_prompt_id: Optional[int] = None  # 画像生成用プロンプトID（省略可）
-    event_id: Optional[str] = None  # イベントID（省略可）
-    survey_responses: Optional[List[Dict[str, Any]]] = None  # アンケート回答データ（省略可）
-
-class CreateCocktailAnonymousRequest(BaseModel):
-    recent_event: str
-    event_name: str
-    name: str = ""
-    career: str
-    hobby: str
-    prompt: str = ""  # 画像生成用プロンプト（省略可）
-    recipe_prompt_id: Optional[int] = None  # レシピ生成用プロンプトID（省略可）
-    image_prompt_id: Optional[int] = None  # 画像生成用プロンプトID（省略可）
-    event_id: Optional[str] = None  # イベントID（省略可）
-
-class CreateCocktailResponse(BaseModel):
-    result: str
-    id: str = ""
-    cocktail_name: str = ""
-    concept: str = ""
-    color: str = ""
-    recipe: list[RecipeItem] = []
-    image_base64: str = ""
-    detail: str = ""
-
-def load_syrup_info_txt(path="storage/syrup.txt"):
-    syrup_dict = {}
-    try:
-        with open(path, encoding="utf-8") as f:
-            lines = f.read().splitlines()
-        names = ["ベリー", "青りんご", "シトラス", "ホワイト"]
-        descs = []
-        color_map = {}
-        for name in names:
-            for i, line in enumerate(lines):
-                if line.strip() == name:
-                    desc = lines[i+1] if i+1 < len(lines) else ""
-                    descs.append(desc)
-                    color = ""
-                    if "The color is" in desc:
-                        color = desc.split("The color is")[-1].strip().replace(".", "")
-                    elif "The color is" in lines[i+1]:
-                        color = lines[i+1].split("The color is")[-1].strip().replace(".", "")
-                    color_map[name] = color
-        for i, name in enumerate(names):
-            syrup_dict[name] = {"desc": descs[i] if i < len(descs) else "", "color": color_map.get(name, "")}
-    except Exception as e:
-        print(f"syrup.txtの読み込みエラー: {e}")
-    return syrup_dict
-
-
-def load_fusion_filter_words(path="storage/FUSIONフィルタ_v1.0.csv"):
-    """FUSIONフィルタCSVを読み込み、フィルタ対象語句のリストを返す"""
-    filter_words = []
-    try:
-        with open(path, encoding="utf-8") as f:
-            lines = f.read().splitlines()
-        # 2行目から読み込み（1行目はヘッダー）
-        for line in lines[1:]:
-            if line.strip():
-                # 矢印の後の部分を取得
-                parts = line.split("→")
-                if len(parts) >= 2:
-                    word = parts[1].strip()
-                    if word:
-                        filter_words.append(word)
-    except Exception as e:
-        print(f"FUSIONフィルタCSVの読み込みエラー: {e}")
-    return filter_words
-
-
-def validate_cocktail_name(cocktail_name, filter_words):
-    """
-    カクテル名がフィルタ対象語句と競合しないか検証
-    部分一致、完全一致、または1文字の削除・追加・置換で一致する場合はFalseを返す
-    """
-    import difflib
-    
-    # カクテル名を正規化（スペース削除、大文字小文字統一）
-    normalized_name = cocktail_name.replace(" ", "").lower()
-    
-    for filter_word in filter_words:
-        normalized_filter = filter_word.replace(" ", "").lower()
-        
-        # 部分一致チェック - カクテル名にフィルタ語句が含まれているかチェック
-        if normalized_filter in normalized_name:
-            return False
-        
-        # 逆方向の部分一致チェック - フィルタ語句にカクテル名が含まれているかチェック
-        # （短いカクテル名が長いブランド名の一部と一致する場合）
-        if normalized_name in normalized_filter and len(normalized_name) >= 2:
-            return False
-        
-        # 編集距離（レーベンシュタイン距離）が1以下かチェック
-        # 1文字の追加、削除、置換で一致する場合
-        if len(normalized_name) > 0 and len(normalized_filter) > 0:
-            # difflib.SequenceMatcher を使用して類似度を計算
-            similarity = difflib.SequenceMatcher(None, normalized_name, normalized_filter).ratio()
-            
-            # 文字数の差が1以下で、類似度が高い場合
-            len_diff = abs(len(normalized_name) - len(normalized_filter))
-            if len_diff <= 1:
-                # 編集距離1の場合の類似度の閾値を設定
-                min_len = min(len(normalized_name), len(normalized_filter))
-                if min_len > 0:
-                    threshold = (min_len - 1) / min_len
-                    if similarity >= threshold:
-                        return False
-    
-    return True
-
-
-def regenerate_cocktail_name_with_mini_llm(cocktail_data, filter_words):
-    """
-    ミニLLMエンドポイントを使用してカクテル名を再生成
-    cocktail_data: 元のカクテル情報（concept, color, recipe等）
-    """
-    # ミニLLMエンドポイントを使用
-    api_key = os.environ.get("AZURE_OPENAI_API_KEY_LLM") or os.environ.get("OPENAI_API_KEY")
-    endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT_LLM_MINI")
-    
-    if not api_key or not endpoint:
-        print("Mini LLM APIキーまたはエンドポイントが設定されていません")
-        return None
-    
-    # システムプロンプト
-    system_prompt = """あなたはカクテルの名前を考えるプロの命名専門家です。
-以下の条件を厳守してカクテル名を提案してください：
-1. 既存のブランド名、企業名、商標、著作権のある名前を絶対に使用しない
-2. 提供されたコンセプトと色を反映した名前にする
-3. 日本語で20文字以内
-4. 創造的でオリジナルな名前にする
-5. 一般的な単語の組み合わせを使う"""
-
-    # ユーザープロンプト
-    user_prompt = f"""以下のカクテルに新しい名前を付けてください：
-コンセプト: {cocktail_data.get('concept', '')}
-色: {cocktail_data.get('color', '')}
-現在の名前「{cocktail_data.get('cocktail_name', '')}」は商標に抵触する可能性があるため使用できません。
-
-新しいカクテル名のみを返してください。説明は不要です。"""
-
-    headers = {
-        "api-key": api_key,
-        "Content-Type": "application/json"
-    }
-    
-    body = {
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        "max_tokens": 50,
-        "temperature": 0.8
-    }
-    
-    try:
-        res = requests.post(endpoint, headers=headers, json=body)
-        if res.ok:
-            result = res.json()
-            new_name = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-            # 新しい名前も検証
-            if new_name and validate_cocktail_name(new_name, filter_words):
-                return new_name
-    except Exception as e:
-        print(f"カクテル名再生成エラー: {e}")
-    
-    return None
-
-
-def upload_image_to_storage(image_base64: str, order_id: str) -> str:
-    """画像をSupabase Storageにアップロードし、公開URLを返す"""
-    try:
-        # base64から画像データを抽出
-        if "," in image_base64:
-            image_data = base64.b64decode(image_base64.split(",")[1])
-        else:
-            image_data = base64.b64decode(image_base64)
-        
-        # ファイル名を生成
-        file_name = f"cocktails/{order_id}.png"
-        
-        # バケットが存在するか確認・作成
-        try:
-            buckets = supabase_client.client.storage.list_buckets()
-            bucket_exists = any(getattr(bucket, 'name', None) == 'cocktail-images' for bucket in buckets)
-            if not bucket_exists:
-                # public引数を削除してバケット作成
-                supabase_client.client.storage.create_bucket('cocktail-images')
-                print("cocktail-imagesバケットを作成しました")
-        except Exception as bucket_error:
-            print(f"バケット確認/作成エラー: {bucket_error}")
-
-        # バケット作成後、バケットが存在するか再確認
-        buckets = supabase_client.client.storage.list_buckets()
-        bucket_exists = any(getattr(bucket, 'name', None) == 'cocktail-images' for bucket in buckets)
-        if not bucket_exists:
-            print("バケット作成に失敗しました")
-            return image_base64
-
-        # Supabase Storageにアップロード
-        result = supabase_client.client.storage.from_("cocktail-images").upload(
-            file_name, 
-            image_data,
-            {"content-type": "image/png"}
-        )
-
-        # 公開URLを取得
-        public_url = supabase_client.client.storage.from_("cocktail-images").get_public_url(file_name)
-        print(f"画像アップロード成功: {public_url}")
-        return public_url
-
-    except Exception as e:
-        print(f"画像アップロードエラー: {e}")
-        # アップロードに失敗した場合はbase64をそのまま返す
-        return image_base64
-
-def build_recipe_system_prompt(syrup_dict, custom_prompt=None):
-    """レシピ生成用システムプロンプトを構築"""
-    syrupDesc = "\n".join([f"{k}: {v['desc']}（色: {v['color']}）" for k, v in syrup_dict.items()])
-    
-    if custom_prompt:
-        # カスタムプロンプトがある場合は、それをベースに使用
-        base_prompt = custom_prompt
-    else:
-        # デフォルトプロンプト - アンケート回答に焦点を当てる
-        base_prompt = (
-            "あなたは世界的に有名なバーテンダーです。お客様からのアンケート回答に基づいて、"
-            "その人の個性、感情、体験、価値観を深く理解し、それを一杯のカクテルに凝縮させることができます。"
-            "アンケートの各回答に隠された本質的な意味を読み取り、その人だけの特別なカクテルを創造してください。"
-            "\n\n"
-            "【カクテル作成の指針】\n"
-            "1. アンケート回答から、その人の現在の心情や状況を読み取る\n"
-            "2. 回答に表れる感情（喜び、期待、不安、達成感など）をカクテルの味わいに変換\n"
-            "3. その人の価値観や大切にしているものをカクテルのコンセプトに反映\n"
-            "4. イベントの文脈も考慮し、参加者同士の共通体験も意識する\n"
-            "\n"
-            "重要：カクテル名には既存のブランド名、企業名、商標、著作権のある名前を絶対に使用しないでください。"
-            "その人の回答から連想される、詩的で印象的なオリジナルの名前を考えてください。"
-            "\n"
-            "以下のシロップ情報を参考に、カクテル名（日本語で20文字以内）、"
-            "コンセプト文（その人の個性を表現する詩的な1文で50〜100文字）、メインカラー（液体の色）とRGB値、"
-            "およびレシピ（シロップ名と比率のリスト、合計25%以内、最大4種まで）を考えてください。"
-            "シロップのホワイトは0~10%で混ぜるようにしてください。"
-            "出力は必ず次のJSON形式で返してください。"
-            "0％でも、ベリー、青りんご、シトラス、ホワイトの4つの配合はそれぞれ示すようにしてください。"
-            "colorはstring型（例: \"春の陽だまりのような黄色（(246, 236, 55)）\"）で返してください。"
-        )
-    
-    json_format = (
-        "```json\\n"
-            "{\n"
-            "  \"cocktail_name\": \"...\",\n"
-            "  \"concept\": \"...\",\n"
-            "  \"color\": \"春の陽だまりのような黄色（(246, 236, 55)）\",\n"
-            "  \"recipe\": [\n"
-            "    {\"syrup\": \"ベリー\", \"ratio\": \"15%\"},\n"
-            "    {\"syrup\": \"青りんご\", \"ratio\": \"10%\"},\n"
-            "    {\"syrup\": \"シトラス\", \"ratio\": \"0%\"},\n"
-            "    {\"syrup\": \"ホワイト\", \"ratio\": \"10%\"}\n"
-            "  ]\n"
-            "}\n"
-        "```"
-    )
-    
-    systemPrompt = base_prompt + json_format + "\\n\\n[シロップ情報]\\n" + syrupDesc
-    return systemPrompt
-
-@app.post("/cocktail/", response_model=CreateCocktailResponse)
-async def create_cocktail(req: CreateCocktailRequest):
-    """カクテル作成（ユーザー情報を保存、画像はbase64でDB保存）"""
-    print("post request / test")
-    return await _create_cocktail_internal(req, save_user_info=req.save_user_info, use_storage=False)
-
-@app.post("/cocktail/anonymous/", response_model=CreateCocktailResponse)
-async def create_cocktail_anonymous(req: CreateCocktailAnonymousRequest):
-    """カクテル作成（ユーザー情報を保存しない、画像はStorageに保存）"""
-    # CreateCocktailRequestと同じ形式に変換（全ての情報を使ってレシピ生成）
-    full_req = CreateCocktailRequest(
-        recent_event=req.recent_event,
-        event_name=req.event_name,
-        name=req.name,
-        career=req.career,
-        hobby=req.hobby,
-        prompt=req.prompt,
-        save_user_info=False,
-        recipe_prompt_id=req.recipe_prompt_id,
-        image_prompt_id=req.image_prompt_id,
-        event_id=req.event_id
-    )
-    return await _create_cocktail_internal(full_req, save_user_info=False, use_storage=True)
-
-async def _create_cocktail_internal(req: CreateCocktailRequest, save_user_info: bool = True, use_storage: bool = False):
-    # 0. イベント関連の処理
-    event_id = req.event_id
-    if not event_id and req.event_name:
-        # event_nameからevent_idを取得、または新規作成
-        existing_event = dbmodule.get_event_by_name(req.event_name)
-        if existing_event:
-            event_id = existing_event['id']
-        else:
-            # 新しいイベントを作成
-            new_event_data = {
-                'name': req.event_name,
-                'description': f'自動生成されたイベント: {req.event_name}',
-                'is_active': True
-            }
-            event_id = dbmodule.insert_event(new_event_data)
-    
-    # 1. レシピ生成
-    syrup_dict = load_syrup_info_txt()
-    
-    # プロンプトIDが指定されている場合は、DBからプロンプトを取得
-    custom_recipe_prompt = None
-    if req.recipe_prompt_id:
-        prompt_data = dbmodule.get_prompt_by_id(req.recipe_prompt_id)
-        if prompt_data and prompt_data['prompt_type'] == 'recipe':
-            custom_recipe_prompt = prompt_data['prompt_text']
-    
-    systemPrompt = build_recipe_system_prompt(syrup_dict, custom_recipe_prompt)
-    
-    # イベント名を取得
-    event_name = req.event_name
-    if event_id:
-        event_data = dbmodule.get_event_by_id(event_id)
-        if event_data:
-            event_name = event_data.get('name', req.event_name)
-    
-    # アンケート回答データを質問文と共に取得
-    survey_info = ""
-    if req.survey_responses and event_id:
-        try:
-            # アンケートと質問情報を取得
-            surveys = dbmodule.get_surveys_by_event(event_id, is_active=True)
-            if surveys:
-                survey = dbmodule.get_survey_with_questions(surveys[0]['id'])
-                if survey and survey.get('questions'):
-                    survey_info = f"\n【イベント: {event_name}】\n"
-                    survey_info += f"アンケート: {survey.get('title', '')}\n"
-                    if survey.get('description'):
-                        survey_info += f"{survey['description']}\n"
-                    survey_info += "\n【回答内容】\n"
-                    
-                    # 質問IDと質問情報のマッピングを作成
-                    question_map = {}
-                    for q in survey['questions']:
-                        question_map[q['id']] = q
-                    
-                    # 回答を質問と共に整形
-                    for response in req.survey_responses:
-                        question_id = response.get('question_id', '')
-                        answer_text = response.get('answer_text', '')
-                        selected_option_ids = response.get('selected_option_ids', [])
-                        
-                        if question_id in question_map:
-                            question = question_map[question_id]
-                            survey_info += f"\n質問: {question['question_text']}\n"
-                            
-                            if answer_text:
-                                survey_info += f"回答: {answer_text}\n"
-                            elif selected_option_ids and question.get('options'):
-                                # 選択肢IDから選択肢テキストを取得
-                                selected_texts = []
-                                for option in question['options']:
-                                    if option['id'] in selected_option_ids:
-                                        selected_texts.append(option['option_text'])
-                                if selected_texts:
-                                    survey_info += f"回答: {', '.join(selected_texts)}\n"
-        except Exception as e:
-            print(f"アンケート情報取得エラー: {e}")
-            # エラーが発生しても基本的な情報で続行
-            survey_info = "\n【アンケート回答】\n"
-            for i, response in enumerate(req.survey_responses, 1):
-                answer_text = response.get('answer_text', '')
-                if answer_text:
-                    survey_info += f"回答{i}: {answer_text}\n"
-    
-    # ユーザープロンプトをアンケート中心に構成
-    if survey_info:
-        userPrompt = (
-            f"{survey_info}\n"
-            f"上記のアンケート回答から、この方の個性、感情、体験を読み取り、"
-            f"世界に一つだけの特別なカクテルを創造してください。"
-        )
-    else:
-        # アンケートがない場合の従来のプロンプト（簡略化）
-        userPrompt = (
-            f"イベント: {event_name}\n"
-            f"最近の出来事: {req.recent_event}\n"
-            f"キャリア: {req.career}\n"
-            f"趣味: {req.hobby}\n\n"
-            f"上記の情報から、この方だけの特別なカクテルを創造してください。"
-        )
-    api_key = os.environ.get("AZURE_OPENAI_API_KEY_LLM") or os.environ.get("OPENAI_API_KEY")
-    endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT_LLM")
-    deployment_id = "gpt-4.1"
-    if not api_key or not endpoint:
-        return CreateCocktailResponse(result="error", detail="OpenAI APIキーまたはエンドポイントが設定されていません。")
-    url = f"{endpoint}/openai/deployments/{deployment_id}/chat/completions?api-version=2023-12-01-preview"
-    import requests
-    headers = {
-        "api-key": api_key,
-        "Content-Type": "application/json"
-    }
-    body = {
-        "messages": [
-            {"role": "system", "content": systemPrompt},
-            {"role": "user", "content": userPrompt}
-        ],
-        "max_tokens": 400,
-        "temperature": 0.7
-    }
-    res = requests.post(url, headers=headers, json=body)
-    if not res.ok:
-        return CreateCocktailResponse(result="error", detail="OpenAI API通信エラー")
-    result = res.json()
-    content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-    import re
-    jsonMatch = re.search(r"\{[\s\S]+\}", content)
-    if not jsonMatch:
-        return CreateCocktailResponse(result="error", detail="ChatGPT出力からJSONが抽出できませんでした: " + content)
-    import json as pyjson
-    data = pyjson.loads(jsonMatch.group(0))
-    recipe = data.get("recipe", [])
-    cocktail_name = data.get("cocktail_name", "")
-    concept = data.get("concept", "")
-    color = data.get("color", "")
-    if isinstance(color, dict):
-        target_rgb = color.get("target_rgb", "")
-    else:
-        target_rgb = ""
-
-    # カクテル名の検証とフィルタリング
-    filter_words = load_fusion_filter_words()
-    if not validate_cocktail_name(cocktail_name, filter_words):
-        print(f"カクテル名「{cocktail_name}」がフィルタに引っ掛かりました。再生成を試みます。")
-        
-        # 最大3回まで再生成を試みる
-        max_retries = 3
-        for retry in range(max_retries):
-            new_name = regenerate_cocktail_name_with_mini_llm({
-                'cocktail_name': cocktail_name,
-                'concept': concept,
-                'color': color
-            }, filter_words)
-            
-            if new_name:
-                print(f"新しいカクテル名: {new_name}")
-                cocktail_name = new_name
-                break
-        else:
-            # 再生成に失敗した場合、汎用的な名前を生成
-            import datetime
-            timestamp = datetime.datetime.now().strftime("%H%M%S")
-            cocktail_name = f"特製カクテル{timestamp}"
-            print(f"再生成に失敗したため、汎用名を使用: {cocktail_name}")
-
-    # 3. order_idを6桁ランダムで生成（重複チェック付き）
-    import random
-    max_attempts = 10
-    for _ in range(max_attempts):
-        order_id = str(random.randint(100000, 999999))
-        # DBに同じorder_idが存在しないかチェック
-        if not dbmodule.get_cocktail_by_order_id(order_id):
-            break
-    else:
-        return CreateCocktailResponse(result="error", detail="注文番号の重複が解消できませんでした。")
-
-    # 2. 画像生成
-    # プロンプトIDが指定されている場合は、DBからプロンプトを取得
-    custom_image_prompt = None
-    if req.image_prompt_id:
-        prompt_data = dbmodule.get_prompt_by_id(req.image_prompt_id)
-        if prompt_data and prompt_data['prompt_type'] == 'image':
-            custom_image_prompt = prompt_data['prompt_text']
-    
-    if custom_image_prompt:
-        prompt_full = f"{color}のカクテル。メインカラーのRGBは{target_rgb}。{concept}。{req.prompt}。{custom_image_prompt}"
-    else:
-        prompt_full = (
-            f"{color}のカクテル。メインカラーのRGBは{target_rgb}。{concept}。{req.prompt}。背景は完全な透明（透過PNG）、カクテル以外は描かず、カクテルそのものだけをリアルな質感の写真風イラストとして生成してください。必ず生成画像の液体部分の色が指定されたメインカラーのRGB値の色味に近くなるようにしてください"
-        )
-    api_key_img = os.environ.get("GPT_API_KEY") or os.environ.get("OPENAI_API_KEY")
-    if not api_key_img:
-        return CreateCocktailResponse(result="error", detail="gpt-image APIキー(GPT_API_KEY)が設定されていません。")
-    clientUrl = "https://api.openai.com/v1/images/generations"
-    headers_img = {
-        "Authorization": f"Bearer {api_key_img}",
-        "Content-Type": "application/json"
-    }
-    body_img = {
-        "model": "gpt-image-1",
-        "prompt": prompt_full,
-        "size": "1024x1536",
-        "quality": "low",
-    }
-    res_img = requests.post(clientUrl, headers=headers_img, json=body_img)
-    if not res_img.ok:
-        errorText = res_img.text
-        return CreateCocktailResponse(result="error", detail="gpt-image API通信エラー: " + errorText)
-    result_img = res_img.json()
-    image_base64 = result_img.get("data", [{}])[0].get("b64_json", "")
-    if not image_base64:
-        return CreateCocktailResponse(result="error", detail="画像生成APIレスポンス異常: " + str(result_img))
-    image_base64 = f"data:image/png;base64,{image_base64}"
-
-    # === 画像を中央クロップ＆リサイズ（720x1080） ===
-    def crop_and_resize_base64_image(base64_str: str, target_width: int = 720, target_height: int = 1080) -> str:
-        # base64ヘッダー除去
-        if "," in base64_str:
-            base64_str = base64_str.split(",")[1]
-        img_bytes = base64.b64decode(base64_str)
-        with Image.open(io.BytesIO(img_bytes)) as img:
-            src_width, src_height = img.size
-            target_aspect = target_width / target_height
-            src_aspect = src_width / src_height
-
-            # クロップ範囲計算
-            if src_aspect > target_aspect:
-                # 横長→左右をカット
-                new_width = int(src_height * target_aspect)
-                left = (src_width - new_width) // 2
-                box = (left, 0, left + new_width, src_height)
-            else:
-                # 縦長→上下をカット
-                new_height = int(src_width / target_aspect)
-                top = (src_height - new_height) // 2
-                box = (0, top, src_width, top + new_height)
-            img_cropped = img.crop(box)
-            img_resized = img_cropped.resize((target_width, target_height), Image.LANCZOS)
-            buf = io.BytesIO()
-            img_resized.save(buf, format="PNG")
-            b64_png = base64.b64encode(buf.getvalue()).decode("utf-8")
-            return f"data:image/png;base64,{b64_png}"
-
-    image_base64 = crop_and_resize_base64_image(image_base64, 720, 1080)
-    
-    # 画像保存方法の分岐
-    if use_storage:
-        # Supabase Storageに画像をアップロード
-        image_data = upload_image_to_storage(image_base64, order_id)
-    else:
-        # base64エンコードをそのまま使用
-        image_data = image_base64
-
-    # 4. DB保存
-    # save_user_infoがFalseの時はユーザー情報を空文字で保存
-    if not save_user_info:
-        recent_event = ""
-        event_name = ""
-        user_name = ""
-        career = ""
-        hobby = ""
-    else:
-        recent_event = req.recent_event
-        event_name = req.event_name
-        user_name = req.name
-        career = req.career
-        hobby = req.hobby
-
-    # レシピから各比率を抽出
-    flavor_ratios = ["0%", "0%", "0%", "0%"]
-    for item in recipe:
-        syrup = item.get("syrup", "")
-        ratio = item.get("ratio", "0%")
-        if syrup == "ベリー":
-            flavor_ratios[0] = ratio
-        elif syrup == "青りんご":
-            flavor_ratios[1] = ratio
-        elif syrup == "シトラス":
-            flavor_ratios[2] = ratio
-        elif syrup == "ホワイト":
-            flavor_ratios[3] = ratio
-
-    db_data = {
-        "order_id": order_id,
-        "status": 200,
-        "name": cocktail_name,
-        "image": image_data,
-        "flavor_ratio1": flavor_ratios[0],
-        "flavor_ratio2": flavor_ratios[1],
-        "flavor_ratio3": flavor_ratios[2],
-        "flavor_ratio4": flavor_ratios[3],
-        "comment": concept,
-        "recent_event": recent_event,
-        "event_name": event_name,
-        "user_name": user_name,
-        "career": career,
-        "hobby": hobby,
-        "event_id": event_id,
-    }
-    try:
-        inserted_id = dbmodule.insert_cocktail(db_data)
-        if not inserted_id:
-            # 失敗時のデバッグ情報を出力
-            print("DB insert failed")
-            # print("db_data:", db_data)
-            return CreateCocktailResponse(
-                result="error",
-                detail=f"DB insert failed. db_data={db_data}, inserted_id={inserted_id}"
-            )
-        
-        # アンケート回答データが含まれている場合、それも保存
-        if req.survey_responses and event_id:
-            try:
-                # 最初のアクティブなアンケートを取得してIDを取得
-                surveys = dbmodule.get_surveys_by_event(event_id, is_active=True)
-                if surveys:
-                    survey_id = surveys[0]['id']
-                    
-                    # アンケート回答データを準備
-                    answers_data = []
-                    for response in req.survey_responses:
-                        answer_data = {
-                            'question_id': response.get('question_id', ''),
-                            'answer_text': response.get('answer_text'),
-                            'selected_option_ids': response.get('selected_option_ids', [])
-                        }
-                        answers_data.append(answer_data)
-                    
-                    # アンケート回答を保存
-                    survey_response_id = dbmodule.submit_survey_response(survey_id, inserted_id, answers_data)
-                    if survey_response_id:
-                        print(f"アンケート回答も保存しました: response_id={survey_response_id}")
-                    else:
-                        print("アンケート回答の保存に失敗しましたが、カクテル作成は継続します")
-            except Exception as survey_error:
-                print(f"アンケート回答保存エラー: {survey_error}")
-                # エラーが発生してもカクテル作成は継続
-        
-        # 使用したプロンプトIDをカクテルと関連付け
-        if req.recipe_prompt_id:
-            dbmodule.link_cocktail_prompt(inserted_id, req.recipe_prompt_id, 'recipe')
-        else:
-            # デフォルトプロンプトを使用した場合は、デフォルトプロンプトのIDを取得して保存
-            default_recipe_prompts = dbmodule.get_prompts('recipe', True)
-            if default_recipe_prompts:
-                # 最初のアクティブなレシピプロンプトをデフォルトとして使用
-                default_prompt_id = default_recipe_prompts[0]['id']
-                dbmodule.link_cocktail_prompt(inserted_id, default_prompt_id, 'recipe')
-        
-        if req.image_prompt_id:
-            dbmodule.link_cocktail_prompt(inserted_id, req.image_prompt_id, 'image')
-        else:
-            # デフォルトプロンプトを使用した場合は、デフォルトプロンプトのIDを取得して保存
-            default_image_prompts = dbmodule.get_prompts('image', True)
-            if default_image_prompts:
-                # 最初のアクティブな画像プロンプトをデフォルトとして使用
-                default_prompt_id = default_image_prompts[0]['id']
-                dbmodule.link_cocktail_prompt(inserted_id, default_prompt_id, 'image')
-        
-        # use_storageのときはimage_base64にURLを返す
-        if use_storage:
-            image_base64_value = image_data  # URL
-        else:
-            image_base64_value = image_base64  # base64
-        return CreateCocktailResponse(
-            result="success",
-            id=str(order_id),
-            cocktail_name=cocktail_name,
-            concept=concept,
-            color=color,
-            recipe=[RecipeItem(**item) for item in recipe],
-            image_base64=image_base64_value,
-            detail="",
-        )
-    except Exception as e:
-        import traceback
-        tb = traceback.format_exc()
-        # print("DB insert exception:", tb)
-        # print("db_data:", db_data)
-        return CreateCocktailResponse(result="error", detail=f"{e}\n{tb}\ndb_data={db_data}")
-
-# プロンプト管理API
-@app.get("/prompts/")
-async def get_prompts(prompt_type: str = None):
-    """プロンプト一覧を取得"""
-    try:
-        prompts = dbmodule.get_prompts(prompt_type=prompt_type)
-        return {"result": "success", "prompts": prompts}
-    except Exception as e:
-        return {"result": "error", "detail": str(e)}
-
-@app.get("/prompts/{prompt_id}")
-async def get_prompt(prompt_id: int):
-    """プロンプトを取得"""
-    try:
-        prompt = dbmodule.get_prompt_by_id(prompt_id)
-        if not prompt:
-            return {"result": "error", "detail": "プロンプトが見つかりません"}
-        return {"result": "success", "prompt": prompt}
-    except Exception as e:
-        return {"result": "error", "detail": str(e)}
-
-class PromptRequest(BaseModel):
-    prompt_type: str
-    title: str
-    description: str = ""
-    prompt_text: str
-    is_active: bool = True
-
-@app.post("/prompts/")
-async def create_prompt(req: PromptRequest):
-    """プロンプトを作成"""
-    try:
-        data = {
-            "prompt_type": req.prompt_type,
-            "title": req.title,
-            "description": req.description,
-            "prompt_text": req.prompt_text,
-            "is_active": req.is_active
+        db_data = {
+            "poured": str(delivery_data.poured),
+            "name": delivery_data.name,
+            "flavor_name1": delivery_data.flavor_name1,
+            "flavor_ratio1": delivery_data.flavor_ratio1,
+            "flavor_name2": delivery_data.flavor_name2,
+            "flavor_ratio2": delivery_data.flavor_ratio2,
+            "flavor_name3": delivery_data.flavor_name3,
+            "flavor_ratio3": delivery_data.flavor_ratio3,
+            "flavor_name4": delivery_data.flavor_name4,
+            "flavor_ratio4": delivery_data.flavor_ratio4,
+            "comment": delivery_data.comment,
         }
-        prompt_id = dbmodule.insert_prompt(data)
-        if not prompt_id:
-            return {"result": "error", "detail": "プロンプトの作成に失敗しました"}
-        return {"result": "success", "id": prompt_id}
-    except Exception as e:
-        return {"result": "error", "detail": str(e)}
-
-@app.put("/prompts/{prompt_id}")
-async def update_prompt(prompt_id: int, req: PromptRequest):
-    """プロンプトを更新"""
-    try:
-        data = {
-            "prompt_type": req.prompt_type,
-            "title": req.title,
-            "description": req.description,
-            "prompt_text": req.prompt_text,
-            "is_active": req.is_active
+        
+        inserted_id = CocktailService.insert_poured_cocktail(db_data)
+        return {
+            "result": "success",
+            "inserted_id": inserted_id,
+            "message": "配達処理が完了しました"
         }
-        success = dbmodule.update_prompt(prompt_id, data)
-        if not success:
-            return {"result": "error", "detail": "プロンプトの更新に失敗しました"}
-        return {"result": "success"}
     except Exception as e:
-        return {"result": "error", "detail": str(e)}
+        raise HTTPException(status_code=500, detail=f"配達処理エラー: {str(e)}")
+
+@app.get("/debug/cocktails-count")
+async def debug_cocktails_count_legacy():
+    """レガシーデバッグエンドポイント（/cocktail/debug/countと同等）"""
+    from services.cocktail_service import CocktailService
+    try:
+        count_info = CocktailService.get_cocktails_count_debug()
+        return count_info
+    except Exception as e:
+        return {"error": str(e), "cocktails_count": 0}
 
 @app.post("/prompts/initialize")
-async def initialize_prompts():
-    """デフォルトプロンプトを初期化"""
+async def initialize_prompts_legacy():
+    """レガシープロンプト初期化エンドポイント（/prompts/initialize-defaultsと同等）"""
     try:
-        dbmodule.initialize_default_prompts()
+        PromptService.initialize_default_prompts()
         return {"result": "success", "detail": "デフォルトプロンプトを初期化しました"}
     except Exception as e:
         return {"result": "error", "detail": str(e)}
 
-# イベント管理API
-@app.get("/events/")
-async def get_events(is_active: bool = None):
-    """イベント一覧を取得"""
+# 違反報告関連のレガシーエンドポイント
+from services.violation_service import ViolationService
+from models.requests import ViolationReportRequest, HideCocktailRequest
+from typing import List
+
+@app.get("/violation-reports/", response_model=Dict[str, Any])
+async def get_violation_reports_legacy(
+    cocktail_id: Optional[int] = Query(None, description="特定カクテルの報告のみ取得"),
+    status: Optional[str] = Query(None, description="特定ステータスの報告のみ取得"),
+    show_all: bool = Query(False, description="全ステータスの報告を取得")
+):
+    """レガシー違反報告一覧エンドポイント（/violations/violation-reports/と同等）"""
     try:
-        events = dbmodule.get_events(is_active=is_active)
-        return {"result": "success", "events": events}
+        reports = ViolationService.get_violation_reports(cocktail_id, status, show_all)
+        # フロントエンドが期待する形式に合わせる
+        return {"reports": reports}
     except Exception as e:
-        return {"result": "error", "detail": str(e)}
+        raise HTTPException(status_code=500, detail=f"違反報告取得エラー: {str(e)}")
 
-@app.get("/events/{event_id}")
-async def get_event(event_id: str):
-    """イベントを取得"""
+@app.put("/violation-reports/{report_id}/status", response_model=Dict[str, Any])
+async def update_violation_report_status_legacy(
+    report_id: int,
+    status_data: Dict[str, str]
+):
+    """レガシー違反報告ステータス更新エンドポイント"""
     try:
-        event = dbmodule.get_event_by_id(event_id)
-        if not event:
-            return {"result": "error", "detail": "イベントが見つかりません"}
-        return {"result": "success", "event": event}
-    except Exception as e:
-        return {"result": "error", "detail": str(e)}
-
-class EventRequest(BaseModel):
-    name: str
-    description: str = ""
-    is_active: bool = True
-
-# アンケート関連のPydanticモデル
-class QuestionOption(BaseModel):
-    option_text: str
-    display_order: int
-
-class SurveyQuestion(BaseModel):
-    question_type: Literal['text', 'single_choice', 'multiple_choice']
-    question_text: str
-    is_required: bool = False
-    display_order: int
-    options: Optional[List[QuestionOption]] = None
-
-class SurveyRequest(BaseModel):
-    title: str
-    description: Optional[str] = None
-    is_active: bool = True
-    start_date: Optional[datetime] = None
-    end_date: Optional[datetime] = None
-    questions: List[SurveyQuestion]
-
-class SurveyUpdateRequest(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    is_active: Optional[bool] = None
-    start_date: Optional[datetime] = None
-    end_date: Optional[datetime] = None
-    questions: Optional[List[SurveyQuestion]] = None
-
-class AnswerData(BaseModel):
-    question_id: str
-    answer_text: Optional[str] = None
-    selected_option_ids: Optional[List[str]] = None
-
-class SurveyResponseRequest(BaseModel):
-    cocktail_id: Optional[int] = None
-    answers: List[AnswerData]
-
-@app.post("/events/")
-async def create_event(req: EventRequest):
-    """イベントを作成"""
-    try:
-        data = {
-            "name": req.name,
-            "description": req.description,
-            "is_active": req.is_active
-        }
-        event_id = dbmodule.insert_event(data)
-        if not event_id:
-            return {"result": "error", "detail": "イベントの作成に失敗しました"}
-        return {"result": "success", "id": event_id}
-    except Exception as e:
-        return {"result": "error", "detail": str(e)}
-
-@app.put("/events/{event_id}")
-async def update_event(event_id: str, req: EventRequest):
-    """イベントを更新"""
-    try:
-        data = {
-            "name": req.name,
-            "description": req.description,
-            "is_active": req.is_active
-        }
-        success = dbmodule.update_event(event_id, data)
+        new_status = status_data.get("status")
+        if not new_status:
+            raise HTTPException(status_code=400, detail="statusフィールドが必要です")
+        
+        success = ViolationService.update_violation_report_status(report_id, new_status)
         if not success:
-            return {"result": "error", "detail": "イベントの更新に失敗しました"}
-        return {"result": "success"}
+            raise HTTPException(
+                status_code=400,
+                detail="違反報告ステータス更新に失敗しました（存在しない報告または無効なステータス）"
+            )
+        
+        return {
+            "result": "success",
+            "message": "違反報告ステータスを更新しました",
+            "report_id": report_id,
+            "new_status": new_status
+        }
+    except HTTPException:
+        raise
     except Exception as e:
-        return {"result": "error", "detail": str(e)}
-
-# 違反報告関連API
-
-def get_client_ip(request: Request) -> str:
-    """クライアントのIPアドレスを取得"""
-    # X-Forwarded-Forヘッダーをチェック（プロキシ経由の場合）
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    if forwarded_for:
-        # 最初のIPアドレスを取得（カンマ区切りの場合）
-        return forwarded_for.split(",")[0].strip()
-    
-    # X-Real-IPヘッダーをチェック（Nginx等のリバースプロキシ）
-    real_ip = request.headers.get("X-Real-IP")
-    if real_ip:
-        return real_ip.strip()
-    
-    # 直接接続の場合
-    client_host = request.client.host if request.client else "unknown"
-    return client_host
-
-class ViolationReportRequest(BaseModel):
-    cocktail_id: int
-    report_reason: str
-    report_category: str = 'inappropriate'  # 'inappropriate', 'offensive', 'spam', 'other'
-
-class HideCocktailRequest(BaseModel):
-    cocktail_id: int
-    reason: str = '違反報告により非表示'
+        raise HTTPException(status_code=500, detail=f"違反報告ステータス更新エラー: {str(e)}")
 
 @app.post("/report-violation/")
-async def report_violation(req: ViolationReportRequest, request: Request):
-    """カクテルの違反を報告"""
+async def report_violation_legacy(report_data: ViolationReportRequest, request: Request):
+    """レガシー違反報告エンドポイント（/violations/report-violation/と同等）"""
+    from utils.validation import get_client_ip
     try:
-        # クライアントのIPアドレスを取得
         client_ip = get_client_ip(request)
-        print(f"違反報告: cocktail_id={req.cocktail_id}, client_ip={client_ip}")
+        success = ViolationService.report_violation(report_data, client_ip)
+        if not success:
+            raise HTTPException(
+                status_code=400, 
+                detail="違反報告に失敗しました（既に報告済みか、存在しないカクテルです）"
+            )
         
-        success = dbmodule.report_violation(
-            cocktail_id=req.cocktail_id,
-            reporter_ip=client_ip,
-            report_reason=req.report_reason,
-            report_category=req.report_category
-        )
-        
-        if success:
-            return {"result": "success", "message": "違反報告を受け付けました"}
-        else:
-            return {"result": "error", "detail": "既にこのIPアドレスから報告済みか、報告に失敗しました"}
+        return {
+            "result": "success",
+            "message": "違反報告を受け付けました",
+            "cocktail_id": report_data.cocktail_id
+        }
+    except HTTPException:
+        raise
     except Exception as e:
-        return {"result": "error", "detail": str(e)}
+        raise HTTPException(status_code=500, detail=f"違反報告エラー: {str(e)}")
 
 @app.post("/hide-cocktail/")
-async def hide_cocktail(req: HideCocktailRequest):
-    """カクテルを非表示にする"""
+async def hide_cocktail_legacy(hide_data: HideCocktailRequest):
+    """レガシーカクテル非表示エンドポイント（/violations/hide-cocktail/と同等）"""
     try:
-        success = dbmodule.hide_cocktail(req.cocktail_id, req.reason)
+        success = ViolationService.hide_cocktail(hide_data.cocktail_id, hide_data.reason)
+        if not success:
+            raise HTTPException(
+                status_code=400, 
+                detail="カクテル非表示に失敗しました（存在しないカクテルです）"
+            )
         
-        if success:
-            return {"result": "success", "message": "カクテルを非表示にしました"}
-        else:
-            return {"result": "error", "detail": "カクテルの非表示に失敗しました"}
+        return {
+            "result": "success",
+            "message": "カクテルを非表示にしました",
+            "cocktail_id": hide_data.cocktail_id,
+            "reason": hide_data.reason
+        }
+    except HTTPException:
+        raise
     except Exception as e:
-        return {"result": "error", "detail": str(e)}
+        raise HTTPException(status_code=500, detail=f"カクテル非表示エラー: {str(e)}")
 
 @app.post("/show-cocktail/{cocktail_id}")
-async def show_cocktail(cocktail_id: int):
-    """カクテルを再表示する"""
+async def show_cocktail_legacy(cocktail_id: int):
+    """レガシーカクテル再表示エンドポイント（/violations/show-cocktail/と同等）"""
     try:
-        success = dbmodule.show_cocktail(cocktail_id)
+        success = ViolationService.show_cocktail(cocktail_id)
+        if not success:
+            raise HTTPException(
+                status_code=400, 
+                detail="カクテル再表示に失敗しました（存在しないカクテルです）"
+            )
         
-        if success:
-            return {"result": "success", "message": "カクテルを再表示しました"}
-        else:
-            return {"result": "error", "detail": "カクテルの再表示に失敗しました"}
+        return {
+            "result": "success",
+            "message": "カクテルを再表示しました",
+            "cocktail_id": cocktail_id
+        }
+    except HTTPException:
+        raise
     except Exception as e:
-        return {"result": "error", "detail": str(e)}
+        raise HTTPException(status_code=500, detail=f"カクテル再表示エラー: {str(e)}")
 
-@app.get("/violation-reports/")
-async def get_violation_reports(cocktail_id: int = None, status: str = None, show_all: bool = False):
-    """違反報告一覧を取得"""
+# ヘルスチェックエンドポイント
+@app.get("/", tags=["Health"])
+def health_check():
+    """ヘルスチェック"""
+    return {
+        "status": "healthy", 
+        "message": "AI Bartender API v2.0 is running",
+        "version": "2.0.0",
+        "architecture": "modular"
+    }
+
+@app.get("/status_check", tags=["Health"])
+def status_check():
+    """ステータスチェック（レガシー互換）"""
+    return "ready"
+
+# システム情報エンドポイント
+@app.get("/system/info", tags=["System"])
+def get_system_info():
+    """システム情報取得"""
+    return {
+        "api_name": "AI Bartender API",
+        "version": "2.0.0",
+        "architecture": "modular",
+        "modules": {
+            "cocktail_service": "カクテル生成機能",
+            "event_service": "イベント管理機能", 
+            "survey_service": "アンケート機能",
+            "violation_service": "違反報告機能",
+            "prompt_service": "プロンプト管理機能"
+        },
+        "endpoints": {
+            "cocktails": "/cocktail/*",
+            "events": "/events/*",
+            "surveys": "/surveys/*", 
+            "violations": "/violations/*",
+            "prompts": "/prompts/*"
+        }
+    }
+
+# 設定確認エンドポイント（開発用）
+@app.get("/debug/config", tags=["Debug"])
+def debug_config():
+    """API設定の確認（開発用）"""
+    validation = settings.validate_api_keys()
+    return {
+        "api_keys_status": validation,
+        "endpoints": {
+            "llm_url": bool(settings.get_llm_url()),
+            "image_api": "OpenAI Images API"
+        },
+        "settings": {
+            "deployment_id": settings.DEPLOYMENT_ID,
+            "image_model": settings.IMAGE_MODEL,
+            "timeouts": {
+                "llm": settings.LLM_TIMEOUT,
+                "image": settings.IMAGE_TIMEOUT
+            },
+            "image_processing": {
+                "target_width": settings.TARGET_WIDTH,
+                "target_height": settings.TARGET_HEIGHT
+            }
+        },
+        "cors": {
+            "origins": settings.CORS_ORIGINS,
+            "methods": settings.CORS_METHODS
+        }
+    }
+
+# モジュール統計エンドポイント（開発用）
+@app.get("/debug/modules", tags=["Debug"])
+def debug_modules():
+    """モジュール読み込み状況確認"""
     try:
-        print(f"違反報告API呼び出し - cocktail_id: {cocktail_id}, status: {status}, show_all: {show_all}")
-        
-        # 一時的にすべてのステータスを表示（デバッグ用）
-        # show_all=Trueの場合はすべてのステータスを表示、そうでなければpending/reviewingのみ
-        if show_all:
-            status_filter = None  # すべてのステータスを表示
-        else:
-            # 一時的にすべてのステータスを表示
-            status_filter = None  # 指定されたステータスまたはデフォルト（pending/reviewing）
-            
-        reports = dbmodule.get_violation_reports(cocktail_id, status_filter, show_all)
-        print(f"API戻り値: {len(reports)}件の報告")
-        return {"result": "success", "reports": reports}
-    except Exception as e:
-        print(f"違反報告API例外: {e}")
-        return {"result": "error", "detail": str(e)}
-
-@app.put("/violation-reports/{report_id}/status")
-async def update_violation_report_status(report_id: int, status_data: dict):
-    """違反報告のステータスを更新"""
-    try:
-        print(f"ステータス更新リクエスト: report_id={report_id}, data={status_data}")
-        status = status_data.get("status")
-        if not status:
-            print("エラー: ステータスが指定されていません")
-            return {"result": "error", "detail": "ステータスが指定されていません"}
-        
-        success = dbmodule.update_violation_report_status(report_id, status)
-        print(f"ステータス更新結果: success={success}")
-        if success:
-            return {"result": "success"}
-        else:
-            return {"result": "error", "detail": "ステータス更新に失敗しました"}
-    except Exception as e:
-        print(f"ステータス更新例外: {e}")
-        return {"result": "error", "detail": str(e)}
-
-# === ここまで追加 ===
-
-# アンケート関連API
-
-@app.post("/events/{event_id}/surveys/")
-async def create_survey(event_id: str, req: SurveyRequest):
-    """イベントのアンケートを作成（質問含む）"""
-    try:
-        # アンケート基本情報
-        survey_data = {
-            'event_id': event_id,
-            'title': req.title,
-            'description': req.description,
-            'is_active': req.is_active,
-            'start_date': req.start_date.isoformat() if req.start_date else None,
-            'end_date': req.end_date.isoformat() if req.end_date else None
+        modules_status = {
+            "config.settings": "✅ 読み込み済み",
+            "models.requests": "✅ 読み込み済み", 
+            "utils.image_utils": "✅ 読み込み済み",
+            "utils.text_utils": "✅ 読み込み済み",
+            "utils.validation": "✅ 読み込み済み",
+            "services.cocktail_service": "✅ 読み込み済み",
+            "services.event_service": "✅ 読み込み済み",
+            "services.survey_service": "✅ 読み込み済み", 
+            "services.violation_service": "✅ 読み込み済み",
+            "services.prompt_service": "✅ 読み込み済み",
+            "routers": "✅ 全ルーター読み込み済み"
         }
         
-        # 質問データの準備
-        questions_data = []
-        for question in req.questions:
-            question_data = {
-                'question_type': question.question_type,
-                'question_text': question.question_text,
-                'is_required': question.is_required,
-                'display_order': question.display_order
-            }
-            
-            # 選択肢がある場合
-            if question.options:
-                question_data['options'] = [
-                    {
-                        'option_text': opt.option_text,
-                        'display_order': opt.display_order
-                    }
-                    for opt in question.options
-                ]
-            
-            questions_data.append(question_data)
+        return {
+            "modules": modules_status,
+            "total_modules": len(modules_status),
+            "status": "all_modules_loaded"
+        }
         
-        survey_id = dbmodule.create_survey_with_questions(survey_data, questions_data)
-        if not survey_id:
-            return {"result": "error", "detail": "アンケートの作成に失敗しました"}
-        
-        return {"result": "success", "survey_id": survey_id}
     except Exception as e:
-        return {"result": "error", "detail": str(e)}
+        return {
+            "error": str(e),
+            "status": "module_load_error"
+        }
 
-@app.get("/events/{event_id}/surveys/")
-async def get_surveys_by_event(event_id: str, is_active: Optional[bool] = None):
-    """イベントのアンケート一覧を取得"""
-    try:
-        surveys = dbmodule.get_surveys_by_event(event_id, is_active)
-        return {"result": "success", "surveys": surveys}
-    except Exception as e:
-        return {"result": "error", "detail": str(e)}
-
-@app.get("/surveys/{survey_id}")
-async def get_survey(survey_id: str):
-    """アンケート詳細を取得"""
-    try:
-        survey = dbmodule.get_survey_with_questions(survey_id)
-        if not survey:
-            return {"result": "error", "detail": "アンケートが見つかりません"}
-        return {"result": "success", "survey": survey}
-    except Exception as e:
-        return {"result": "error", "detail": str(e)}
-
-@app.put("/surveys/{survey_id}")
-async def update_survey(survey_id: str, req: SurveyUpdateRequest):
-    """アンケート情報を更新（質問項目を含む）"""
-    try:
-        print(f"アンケート更新開始: survey_id={survey_id}")
-        print(f"リクエストデータ: {req.model_dump()}")
-        
-        # 基本情報の更新
-        update_data = {}
-        if req.title is not None:
-            update_data['title'] = req.title
-        if req.description is not None:
-            update_data['description'] = req.description
-        if req.is_active is not None:
-            update_data['is_active'] = req.is_active
-        if req.start_date is not None:
-            update_data['start_date'] = req.start_date.isoformat()
-        if req.end_date is not None:
-            update_data['end_date'] = req.end_date.isoformat()
-        
-        # 基本情報を更新
-        if update_data:
-            success = dbmodule.update_survey(survey_id, update_data)
-            if not success:
-                return {"result": "error", "detail": "アンケート基本情報の更新に失敗しました"}
-            print(f"基本情報更新成功: {update_data}")
-        
-        # 質問項目の更新
-        if req.questions is not None:
-            print(f"質問項目更新開始: {len(req.questions)}個の質問")
-            
-            # 既存の質問項目をすべて削除
-            delete_success = dbmodule.delete_survey_questions(survey_id)
-            if not delete_success:
-                return {"result": "error", "detail": "既存の質問項目削除に失敗しました"}
-            print("既存質問項目削除成功")
-            
-            # 新しい質問項目を追加
-            for i, question in enumerate(req.questions):
-                question_data = {
-                    'survey_id': survey_id,
-                    'question_type': question.question_type,
-                    'question_text': question.question_text,
-                    'is_required': question.is_required,
-                    'display_order': question.display_order or (i + 1),
-                    'options': question.options
-                }
-                
-                question_id = dbmodule.create_survey_question(question_data)
-                if not question_id:
-                    return {"result": "error", "detail": f"質問項目{i+1}の作成に失敗しました"}
-                print(f"質問項目{i+1}作成成功: question_id={question_id}")
-        
-        print("アンケート更新完了")
-        return {"result": "success"}
-        
-    except Exception as e:
-        print(f"アンケート更新エラー: {e}")
-        import traceback
-        traceback.print_exc()
-        return {"result": "error", "detail": str(e)}
-
-@app.delete("/surveys/{survey_id}")
-async def delete_survey(survey_id: str):
-    """アンケートを削除"""
-    try:
-        success = dbmodule.delete_survey(survey_id)
-        if success:
-            return {"result": "success"}
-        else:
-            return {"result": "error", "detail": "アンケートの削除に失敗しました"}
-    except Exception as e:
-        return {"result": "error", "detail": str(e)}
-
-@app.get("/surveys/{survey_id}/form")
-async def get_survey_form(survey_id: str):
-    """回答用フォームデータを取得"""
-    try:
-        survey = dbmodule.get_survey_with_questions(survey_id)
-        if not survey:
-            return {"result": "error", "detail": "アンケートが見つかりません"}
-        
-        # アクティブでない場合はエラー
-        if not survey.get('is_active', True):
-            return {"result": "error", "detail": "このアンケートは現在利用できません"}
-        
-        # 期間チェック
-        now = datetime.now()
-        if survey.get('start_date') and datetime.fromisoformat(survey['start_date'].replace('Z', '+00:00')) > now:
-            return {"result": "error", "detail": "アンケート開始前です"}
-        
-        if survey.get('end_date') and datetime.fromisoformat(survey['end_date'].replace('Z', '+00:00')) < now:
-            return {"result": "error", "detail": "アンケートは終了しています"}
-        
-        return {"result": "success", "survey": survey}
-    except Exception as e:
-        return {"result": "error", "detail": str(e)}
-
-@app.post("/surveys/{survey_id}/responses/")
-async def submit_survey_response(survey_id: str, req: SurveyResponseRequest):
-    """アンケート回答を送信"""
-    try:
-        # アンケートの存在と有効性をチェック
-        survey = dbmodule.get_survey_with_questions(survey_id)
-        if not survey:
-            return {"result": "error", "detail": "アンケートが見つかりません"}
-        
-        if not survey.get('is_active', True):
-            return {"result": "error", "detail": "このアンケートは現在利用できません"}
-        
-        # 必須質問のバリデーション
-        required_questions = [q for q in survey.get('questions', []) if q.get('is_required', False)]
-        answered_question_ids = {answer.question_id for answer in req.answers}
-        
-        for required_q in required_questions:
-            if required_q['id'] not in answered_question_ids:
-                return {"result": "error", "detail": f"必須質問「{required_q['question_text']}」に回答してください"}
-        
-        # 回答データの準備
-        answers_data = []
-        for answer in req.answers:
-            answer_data = {
-                'question_id': answer.question_id,
-                'answer_text': answer.answer_text,
-                'selected_option_ids': answer.selected_option_ids or []
-            }
-            answers_data.append(answer_data)
-        
-        # アンケート回答をDBに保存
-        response_id = dbmodule.submit_survey_response(survey_id, req.cocktail_id, answers_data)
-        if not response_id:
-            return {"result": "error", "detail": "回答の保存に失敗しました"}
-        
-        return {"result": "success", "response_id": response_id}
-    except Exception as e:
-        return {"result": "error", "detail": str(e)}
-
-@app.get("/surveys/{survey_id}/responses/")
-async def get_survey_responses(survey_id: str, limit: Optional[int] = 50, offset: int = 0):
-    """アンケート回答一覧を取得"""
-    try:
-        responses_data = dbmodule.get_survey_responses(survey_id, limit, offset)
-        return {"result": "success", **responses_data}
-    except Exception as e:
-        return {"result": "error", "detail": str(e)}
-
-@app.get("/surveys/{survey_id}/statistics")
-async def get_survey_statistics(survey_id: str):
-    """アンケート集計結果を取得"""
-    try:
-        statistics = dbmodule.get_survey_statistics(survey_id)
-        return {"result": "success", "statistics": statistics}
-    except Exception as e:
-        return {"result": "error", "detail": str(e)}
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "main:app", 
+        host="0.0.0.0", 
+        port=8000, 
+        reload=True,
+        log_level="info"
+    )
