@@ -46,7 +46,8 @@ def get_event(event_id: str):
         event = EventService.get_event_by_id(event_id)
         if not event:
             raise HTTPException(status_code=404, detail="イベントが見つかりません")
-        return event
+        # フロントエンドが期待する形式に合わせる
+        return {"event": event}
     except HTTPException:
         raise
     except Exception as e:
@@ -165,9 +166,8 @@ def create_survey_for_event(event_id: str, survey_data: SurveyRequest):
             'event_id': event_id,
             'title': survey_data.title,
             'description': survey_data.description,
-            'is_active': survey_data.is_active,
-            'start_date': survey_data.start_date.isoformat() if survey_data.start_date else None,
-            'end_date': survey_data.end_date.isoformat() if survey_data.end_date else None
+            'is_active': survey_data.is_active
+            # start_date、end_dateは現在サポートしていないため除外
         }
         
         # 質問データの準備
@@ -177,7 +177,7 @@ def create_survey_for_event(event_id: str, survey_data: SurveyRequest):
                 'question_type': question.question_type,
                 'question_text': question.question_text,
                 'is_required': question.is_required,
-                'display_order': question.display_order
+                'display_order': question.order_index  # バックエンドモデルのフィールド名を使用
             }
             
             # 選択肢がある場合
@@ -185,7 +185,7 @@ def create_survey_for_event(event_id: str, survey_data: SurveyRequest):
                 question_data['options'] = [
                     {
                         'option_text': opt.option_text,
-                        'display_order': opt.display_order
+                        'display_order': opt.order_index  # バックエンドモデルのフィールド名を使用
                     }
                     for opt in question.options
                 ]

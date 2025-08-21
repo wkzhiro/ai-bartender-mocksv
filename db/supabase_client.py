@@ -334,10 +334,35 @@ class SupabaseClient:
         try:
             # UUIDの場合は文字列に変換
             event_id_str = str(event_id) if isinstance(event_id, uuid.UUID) else event_id
+            print(f"[SUPABASE] イベント取得クエリ実行: event_id='{event_id_str}'")
+            print(f"[SUPABASE] 元のevent_id: '{event_id}', 型: {type(event_id)}")
+            
             result = self.client.table('events').select('*').eq('id', event_id_str).execute()
-            return result.data[0] if result.data else None
+            
+            print(f"[SUPABASE] クエリ結果: データ数={len(result.data) if result.data else 0}")
+            if result.data:
+                print(f"[SUPABASE] 取得したイベント: {result.data[0]}")
+                return result.data[0]
+            else:
+                print(f"[SUPABASE] イベントが見つかりません: '{event_id_str}'")
+                
+                # デバッグのために少数のイベントIDを確認
+                try:
+                    sample_result = self.client.table('events').select('id, name').limit(5).execute()
+                    if sample_result.data:
+                        print(f"[SUPABASE] サンプルイベント: {sample_result.data}")
+                    else:
+                        print(f"[SUPABASE] eventsテーブルにデータがありません")
+                except Exception as debug_e:
+                    print(f"[SUPABASE] サンプル取得エラー: {debug_e}")
+                
+                return None
+                
         except Exception as e:
-            print(f"イベント取得エラー: {e}")
+            print(f"[SUPABASE] イベント取得エラー: {e}")
+            print(f"[SUPABASE] エラー詳細: {type(e).__name__}: {str(e)}")
+            import traceback
+            print(f"[SUPABASE] スタックトレース: {traceback.format_exc()}")
             return None
     
     def get_event_by_name(self, event_name: str) -> Optional[Dict[str, Any]]:

@@ -28,14 +28,34 @@ class EventService:
         """特定イベント取得"""
         try:
             print(f"[DEBUG] イベント取得開始: {event_id}")
+            print(f"[DEBUG] イベントIDの型: {type(event_id)}, 長さ: {len(event_id)}")
+            print(f"[DEBUG] イベントID内容: '{event_id}'")
+            
             event = dbmodule.get_event_by_id(event_id)
+            
             if event:
                 print(f"[DEBUG] イベント取得成功: {event.get('name', 'Unknown')}")
+                print(f"[DEBUG] 取得したイベントの詳細: {event}")
             else:
                 print(f"[DEBUG] イベントが見つかりません: {event_id}")
+                
+                # デバッグのために全イベントも取得してみる
+                try:
+                    all_events = dbmodule.get_all_events()
+                    print(f"[DEBUG] データベース内の全イベント数: {len(all_events)}")
+                    if all_events:
+                        print(f"[DEBUG] 最初のイベントのサンプル: {all_events[0]}")
+                        event_ids = [e.get('id') for e in all_events[:3]]
+                        print(f"[DEBUG] 最初の3つのイベントID: {event_ids}")
+                except Exception as debug_e:
+                    print(f"[DEBUG] 全イベント取得エラー: {debug_e}")
+            
             return event
         except Exception as e:
             print(f"[ERROR] イベント取得エラー: {e}")
+            print(f"[ERROR] エラー詳細: {type(e).__name__}: {str(e)}")
+            import traceback
+            print(f"[ERROR] スタックトレース: {traceback.format_exc()}")
             return None
     
     @staticmethod
