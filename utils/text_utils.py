@@ -81,8 +81,8 @@ def build_recipe_system_prompt(syrup_dict: Dict[str, str], custom_prompt: Option
 {syrup_info}
 
 レシピの制約:
-- 4種類のシロップの合計が100%になるように調整してください
-- 各シロップの使用量は0%～100%の範囲で、5%刻みで指定してください
+- 4種類のシロップの合計が25%になるように調整してください
+- 各シロップの使用量は1%刻みで指定してください。ただし、ホワイトは最大15％として下さい。
 - 0%のシロップがあっても構いません
 
 出力は以下のJSON形式で返してください:
@@ -95,10 +95,10 @@ def build_recipe_system_prompt(syrup_dict: Dict[str, str], custom_prompt: Option
     "target_rgb": "RGB(r,g,b)形式"
   }},
   "recipe": [
-    {{"syrup": "ベリー", "ratio": "30%"}},
-    {{"syrup": "青りんご", "ratio": "25%"}},
-    {{"syrup": "シトラス", "ratio": "25%"}},
-    {{"syrup": "ホワイト", "ratio": "20%"}}
+    {{"syrup": "ベリー", "ratio": "5%"}},
+    {{"syrup": "青りんご", "ratio": "10%"}},
+    {{"syrup": "シトラス", "ratio": "5%"}},
+    {{"syrup": "ホワイト", "ratio": "5%"}}
   ]
 }}
 
