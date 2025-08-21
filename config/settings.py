@@ -41,7 +41,7 @@ class Settings:
     
     # ファイルパス
     SYRUP_INFO_FILE: str = "syrup.txt"
-    FILTER_WORDS_FILE: str = "fusion_filter_words.txt"
+    FILTER_WORDS_FILE: str = "storage/fusion_filter_words.txt"
     IMAGE_FOLDER: str = "images"
     
     # CORS設定
