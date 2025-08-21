@@ -12,7 +12,10 @@ from models.requests import (
     CreateCocktailResponse,
     SaveCocktailRequest,
     OrderRequest,
-    DeriveryRequest
+    DeriveryRequest,
+    CopyrightConfirmationRequest,
+    CopyrightConfirmationResponse,
+    CopyrightStatusResponse
 )
 from services.cocktail_service import CocktailService
 from utils.image_utils import encode_image_to_base64, download_image_from_storage
@@ -250,3 +253,68 @@ async def create_cocktail_anonymous(req: CreateCocktailAnonymousRequest):
 def order_(order_id: str):
     """注文取得（レガシーエンドポイント）"""
     return generate_response(order_id)
+
+
+# 著作権確認関連エンドポイント
+@router.post("/{cocktail_id}/copyright-confirm", response_model=CopyrightConfirmationResponse)
+async def confirm_copyright(cocktail_id: str, req: CopyrightConfirmationRequest):
+    """著作権確認を行う"""
+    try:
+        print(f"[DEBUG] 著作権確認API呼び出し - cocktail_id: {cocktail_id}")
+        
+        # リクエストのカクテルIDとパスパラメータの一致チェック
+        if req.cocktail_id != cocktail_id:
+            raise HTTPException(
+                status_code=400, 
+                detail="リクエストのカクテルIDとパスパラメータが一致しません"
+            )
+        
+        # 著作権確認を実行
+        result = CocktailService.confirm_copyright(cocktail_id)
+        
+        if not result.get("success", False):
+            raise HTTPException(
+                status_code=400, 
+                detail=result.get("message", "著作権確認に失敗しました")
+            )
+        
+        return CopyrightConfirmationResponse(
+            success=True,
+            cocktail_id=cocktail_id,
+            confirmed_at=result.get("confirmed_at"),
+            message=result.get("message", "著作権確認が完了しました")
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] 著作権確認APIエラー: {e}")
+        raise HTTPException(status_code=500, detail=f"内部サーバーエラー: {str(e)}")
+
+
+@router.get("/{cocktail_id}/copyright-status", response_model=CopyrightStatusResponse)
+async def get_copyright_status(cocktail_id: str):
+    """著作権確認ステータスを取得"""
+    try:
+        print(f"[DEBUG] 著作権ステータス取得API呼び出し - cocktail_id: {cocktail_id}")
+        
+        # ステータスを取得
+        result = CocktailService.get_copyright_status(cocktail_id)
+        
+        if not result.get("success", False):
+            raise HTTPException(
+                status_code=404, 
+                detail=result.get("message", "カクテルが見つかりません")
+            )
+        
+        return CopyrightStatusResponse(
+            cocktail_id=cocktail_id,
+            copyright_confirmed=result.get("copyright_confirmed", False),
+            confirmed_at=result.get("confirmed_at")
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] 著作権ステータス取得APIエラー: {e}")
+        raise HTTPException(status_code=500, detail=f"内部サーバーエラー: {str(e)}")

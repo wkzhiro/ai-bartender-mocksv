@@ -85,7 +85,7 @@ class SupabaseClient:
         try:
             # データを取得（limit+1で次のページの存在を確認）
             extra_limit = limit + 1 if limit else None
-            query = self.client.table('cocktails').select('*').eq('is_visible', True).order('created_at', desc=True)
+            query = self.client.table('cocktails').select('*').eq('is_visible', True).eq('copyright_confirmed', True).order('created_at', desc=True)
             
             # イベントIDでフィルター
             if event_id is not None:
@@ -144,7 +144,7 @@ class SupabaseClient:
         """安全に全件数を取得（タイムアウト対応）、event_idでフィルター可能"""
         try:
             # 方法1: 最も軽量なカウントクエリ（UUIDのみ、制限なし）
-            query = self.client.table('cocktails').select('uuid', count='exact').eq('is_visible', True).limit(1)
+            query = self.client.table('cocktails').select('uuid', count='exact').eq('is_visible', True).eq('copyright_confirmed', True).limit(1)
             if event_id is not None:
                 # UUIDの場合は文字列に変換
                 event_id_str = str(event_id) if isinstance(event_id, uuid.UUID) else event_id
@@ -159,7 +159,7 @@ class SupabaseClient:
         
         try:
             # 方法2: さらに軽量なクエリ（created_atのみ）
-            count_result = self.client.table('cocktails').select('created_at', count='exact').eq('is_visible', True).limit(1).execute()
+            count_result = self.client.table('cocktails').select('created_at', count='exact').eq('is_visible', True).eq('copyright_confirmed', True).limit(1).execute()
             count = count_result.count
             if count is not None:
                 print(f"デバッグ: created_atカウント成功 = {count}")
@@ -173,7 +173,7 @@ class SupabaseClient:
             limit_chunk = 1000
             for i in range(10):  # 最大10000件まで
                 offset_chunk = i * limit_chunk
-                chunk_result = self.client.table('cocktails').select('uuid').eq('is_visible', True).limit(limit_chunk).offset(offset_chunk).execute()
+                chunk_result = self.client.table('cocktails').select('uuid').eq('is_visible', True).eq('copyright_confirmed', True).limit(limit_chunk).offset(offset_chunk).execute()
                 chunk_count = len(chunk_result.data) if chunk_result.data else 0
                 total_estimated += chunk_count
                 

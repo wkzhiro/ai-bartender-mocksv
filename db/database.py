@@ -519,3 +519,46 @@ def get_cocktails_count() -> int:
     except Exception as e:
         print(f"カクテル数取得エラー: {e}")
         return 0
+
+def update_copyright_confirmation(cocktail_uuid: str, confirmed: bool) -> bool:
+    """著作権確認ステータスを更新（UUID使用）"""
+    try:
+        from datetime import datetime
+        
+        data = {
+            'copyright_confirmed': confirmed
+        }
+        
+        # 確認日時も更新
+        if confirmed:
+            data['copyright_confirmed_at'] = datetime.now().isoformat()
+        
+        result = supabase_client.client.table('cocktails').update(data).eq('id', cocktail_uuid).execute()
+        
+        if result.data:
+            print(f"著作権確認更新成功 - cocktail_id: {cocktail_uuid}, confirmed: {confirmed}")
+            return True
+        else:
+            print(f"著作権確認更新失敗 - cocktail_id: {cocktail_uuid}")
+            return False
+            
+    except Exception as e:
+        print(f"著作権確認更新エラー: {e}")
+        return False
+
+def get_copyright_status(cocktail_uuid: str) -> Optional[Dict[str, Any]]:
+    """著作権確認ステータスを取得（UUID使用）"""
+    try:
+        result = supabase_client.client.table('cocktails').select(
+            'id, copyright_confirmed, copyright_confirmed_at'
+        ).eq('id', cocktail_uuid).execute()
+        
+        if result.data:
+            return result.data[0]
+        else:
+            print(f"著作権ステータス取得失敗 - cocktail_id: {cocktail_uuid}")
+            return None
+            
+    except Exception as e:
+        print(f"著作権ステータス取得エラー: {e}")
+        return None

@@ -65,12 +65,14 @@ class CocktailService:
             # 6. レスポンス作成
             response = CreateCocktailResponse(
                 result="success",
-                id=str(order_id),
+                id=cocktail_uuid,  # UUIDを返すように修正
+                order_id=str(order_id),  # 6桁の注文番号も含める
                 cocktail_name=recipe_data["data"]["cocktail_name"],
                 concept=recipe_data["data"]["concept"],
                 color=recipe_data["data"]["color"],
                 recipe=[RecipeItem(**item) for item in recipe_data["data"]["recipe"]],
                 detail="",
+                requires_copyright_confirmation=True  # 著作権確認が必要
             )
             
             # 画像データの設定
@@ -633,4 +635,103 @@ class CocktailService:
                 "poured_cocktails": 0,
                 "methods": {},
                 "status": f"error: {str(e)}"
+            }
+    
+    @staticmethod
+    def confirm_copyright(cocktail_id: str) -> Dict[str, Any]:
+        """著作権確認を行う"""
+        try:
+            print(f"[DEBUG] 著作権確認開始 - cocktail_id: {cocktail_id}")
+            
+            # カクテルの存在確認
+            cocktail = dbmodule.get_cocktail_by_uuid(cocktail_id)
+            if not cocktail:
+                return {
+                    "success": False,
+                    "message": f"カクテルが見つかりません: {cocktail_id}"
+                }
+            
+            # 既に確認済みかチェック
+            if cocktail.get('copyright_confirmed', False):
+                return {
+                    "success": True,
+                    "cocktail_id": cocktail_id,
+                    "confirmed_at": cocktail.get('copyright_confirmed_at'),
+                    "message": "既に著作権確認済みです"
+                }
+            
+            # 著作権確認を更新
+            success = dbmodule.update_copyright_confirmation(cocktail_id, True)
+            if not success:
+                return {
+                    "success": False,
+                    "message": "著作権確認の更新に失敗しました"
+                }
+            
+            # 更新後のデータを取得
+            updated_cocktail = dbmodule.get_cocktail_by_uuid(cocktail_id)
+            confirmed_at = updated_cocktail.get('copyright_confirmed_at') if updated_cocktail else None
+            
+            print(f"[DEBUG] 著作権確認完了 - cocktail_id: {cocktail_id}")
+            
+            # confirmed_atがdatetimeオブジェクトの場合はisoformat()を呼び出し、文字列の場合はそのまま使用
+            confirmed_at_str = None
+            if confirmed_at:
+                if hasattr(confirmed_at, 'isoformat'):
+                    confirmed_at_str = confirmed_at.isoformat()
+                else:
+                    confirmed_at_str = str(confirmed_at)
+            
+            return {
+                "success": True,
+                "cocktail_id": cocktail_id,
+                "confirmed_at": confirmed_at_str,
+                "message": "著作権確認が完了しました"
+            }
+            
+        except Exception as e:
+            error_msg = f"著作権確認エラー: {str(e)}"
+            print(f"[ERROR] {error_msg}")
+            return {
+                "success": False,
+                "message": error_msg
+            }
+    
+    @staticmethod
+    def get_copyright_status(cocktail_id: str) -> Dict[str, Any]:
+        """著作権確認ステータスを取得"""
+        try:
+            print(f"[DEBUG] 著作権ステータス取得開始 - cocktail_id: {cocktail_id}")
+            
+            # カクテルの取得
+            cocktail = dbmodule.get_cocktail_by_uuid(cocktail_id)
+            if not cocktail:
+                return {
+                    "success": False,
+                    "message": f"カクテルが見つかりません: {cocktail_id}"
+                }
+            
+            confirmed_at = cocktail.get('copyright_confirmed_at')
+            
+            # confirmed_atがdatetimeオブジェクトの場合はisoformat()を呼び出し、文字列の場合はそのまま使用
+            confirmed_at_str = None
+            if confirmed_at:
+                if hasattr(confirmed_at, 'isoformat'):
+                    confirmed_at_str = confirmed_at.isoformat()
+                else:
+                    confirmed_at_str = str(confirmed_at)
+            
+            return {
+                "success": True,
+                "cocktail_id": cocktail_id,
+                "copyright_confirmed": cocktail.get('copyright_confirmed', False),
+                "confirmed_at": confirmed_at_str
+            }
+            
+        except Exception as e:
+            error_msg = f"著作権ステータス取得エラー: {str(e)}"
+            print(f"[ERROR] {error_msg}")
+            return {
+                "success": False,
+                "message": error_msg
             }

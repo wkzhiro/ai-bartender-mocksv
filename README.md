@@ -275,11 +275,19 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 │   ├── database.py         # データベース操作
 │   ├── supabase_client.py  # Supabaseクライアント
 │   └── *.py               # その他DB操作
+├── services/              # ビジネスロジック
+│   ├── cocktail_service.py # カクテル生成サービス
+│   └── violation_service.py # 違反報告サービス
+├── routers/               # APIルーティング
+│   ├── cocktails.py       # カクテル関連API
+│   └── violations.py      # 違反報告API
 ├── storage/
 │   ├── syrup.txt          # シロップ情報定義
 │   └── FUSIONフィルタ_v1.0.csv  # ブランド名フィルタ
 ├── migration/             # データベース移行
 ├── images/                # 画像ファイル
+├── README_UUID_MIGRATION.md     # UUIDマイグレーション記録
+├── README_UUID_COLUMN_RENAME_20250821.md  # UUIDカラム名変更対応記録
 └── requirements.txt       # 依存関係
 ```
 

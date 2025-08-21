@@ -70,7 +70,8 @@ class CreateCocktailAnonymousRequest(BaseModel):
 
 class CreateCocktailResponse(BaseModel):
     result: str
-    id: str = ""
+    id: str = ""  # カクテルのUUID
+    order_id: str = ""  # 6桁の注文番号
     cocktail_name: str = ""
     concept: str = ""
     color: Union[str, dict] = ""
@@ -78,6 +79,7 @@ class CreateCocktailResponse(BaseModel):
     image_base64: str = ""
     image_url: str = ""
     detail: str = ""
+    requires_copyright_confirmation: bool = True  # 著作権確認が必要かどうか（常にTrue）
 
 
 # プロンプト関連モデル
@@ -157,3 +159,22 @@ class HideCocktailRequest(BaseModel):
 class HideCocktailUuidRequest(BaseModel):
     cocktail_id: str  # 内部処理用UUID
     reason: str
+
+
+# 著作権確認関連モデル
+class CopyrightConfirmationRequest(BaseModel):
+    cocktail_id: str  # カクテルのUUID
+    confirmed: bool = True  # 常にTrueを想定
+
+
+class CopyrightConfirmationResponse(BaseModel):
+    success: bool
+    cocktail_id: str
+    confirmed_at: Optional[str] = None  # ISO8601フォーマットの日時文字列
+    message: str = ""
+
+
+class CopyrightStatusResponse(BaseModel):
+    cocktail_id: str
+    copyright_confirmed: bool
+    confirmed_at: Optional[str] = None  # ISO8601フォーマットの日時文字列
