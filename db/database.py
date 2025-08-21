@@ -16,13 +16,25 @@ def create_tables():
         print(f"テーブル作成中にエラーが発生しました: {e}")
         raise
 
-def insert_cocktail(data: dict) -> Optional[int]:
-    """カクテルデータを挿入"""
+def insert_cocktail(data: dict) -> Optional[str]:
+    """カクテルデータを挿入（UUID文字列を返す）"""
     return supabase_client.insert_cocktail(data)
 
 def get_cocktail_by_order_id(order_id: str) -> Optional[Dict[str, Any]]:
     """注文IDでカクテルを取得"""
     return supabase_client.get_cocktail_by_order_id(order_id)
+
+def get_cocktail_by_id(cocktail_id: str) -> Optional[Dict[str, Any]]:
+    """UUIDでカクテルを取得"""
+    return supabase_client.get_cocktail_by_id(cocktail_id)
+
+def get_uuid_from_order_id(order_id: str) -> Optional[str]:
+    """order_idからUUIDを取得"""
+    return supabase_client.get_uuid_from_order_id(order_id)
+
+def get_order_id_from_uuid(uuid_id: str) -> Optional[str]:
+    """UUIDからorder_idを取得"""
+    return supabase_client.get_order_id_from_uuid(uuid_id)
 
 def get_all_cocktails(limit: int = None, offset: int = 0, event_id: Union[str, uuid.UUID] = None) -> Dict[str, Any]:
     """全カクテルを取得（ページネーション対応）、event_idでフィルター可能"""
@@ -71,17 +83,17 @@ def update_prompt(prompt_id: int, data: dict):
     """プロンプトを更新"""
     return supabase_client.update_prompt(prompt_id, data)
 
-def link_cocktail_prompt(cocktail_id: int, prompt_id: int, prompt_type: str):
-    """カクテルとプロンプトを関連付け"""
-    return supabase_client.link_cocktail_prompt(cocktail_id, prompt_id, prompt_type)
+def link_cocktail_prompt(cocktail_uuid: str, prompt_id: int, prompt_type: str):
+    """カクテルとプロンプトを関連付け（UUID使用）"""
+    return supabase_client.link_cocktail_prompt(cocktail_uuid, prompt_id, prompt_type)
 
-def get_cocktail_prompts(cocktail_id: int):
-    """カクテルに関連付けられたプロンプトを取得"""
-    return supabase_client.get_cocktail_prompts(cocktail_id)
+def get_cocktail_prompts(cocktail_uuid: str):
+    """カクテルに関連付けられたプロンプトを取得（UUID使用）"""
+    return supabase_client.get_cocktail_prompts(cocktail_uuid)
 
-def get_cocktail_prompt_by_type(cocktail_id: int, prompt_type: str):
-    """カクテルの特定タイプのプロンプトを取得"""
-    return supabase_client.get_cocktail_prompt_by_type(cocktail_id, prompt_type)
+def get_cocktail_prompt_by_type(cocktail_uuid: str, prompt_type: str):
+    """カクテルの特定タイプのプロンプトを取得（UUID使用）"""
+    return supabase_client.get_cocktail_prompt_by_type(cocktail_uuid, prompt_type)
 
 def initialize_default_prompts():
     """デフォルトプロンプトの初期化"""
@@ -114,17 +126,17 @@ def update_event(event_id: Union[str, uuid.UUID], data: dict):
 
 # 違反報告関連の関数
 
-def report_violation(cocktail_id: int, reporter_ip: str, report_reason: str, report_category: str = 'inappropriate'):
-    """カクテルに対する違反報告を追加（IPアドレスベース）"""
+def report_violation(cocktail_uuid: str, reporter_ip: str, report_reason: str, report_category: str = 'inappropriate'):
+    """カクテルに対する違反報告を追加（UUID使用）"""
     try:
         # 既に同じIPアドレスから報告済みかチェック
-        existing = supabase_client.client.table('violation_reports').select('id').eq('cocktail_id', cocktail_id).eq('reporter_id', reporter_ip).execute()
+        existing = supabase_client.client.table('violation_reports').select('id').eq('cocktail_id', cocktail_uuid).eq('reporter_id', reporter_ip).execute()
         if existing.data:
             return False  # 既に報告済み
         
         # 違反報告を追加
         result = supabase_client.client.table('violation_reports').insert({
-            'cocktail_id': cocktail_id,
+            'cocktail_id': cocktail_uuid,
             'reporter_id': reporter_ip,
             'report_reason': report_reason,
             'report_category': report_category
@@ -132,11 +144,11 @@ def report_violation(cocktail_id: int, reporter_ip: str, report_reason: str, rep
         
         if result.data:
             # カクテルの違反報告数を更新し、自動非表示処理を実行
-            count = update_violation_count(cocktail_id)
+            count = update_violation_count(cocktail_uuid)
             
             # 違反報告があった場合は即座に非表示にする
             if count >= 1:
-                hide_cocktail(cocktail_id, f"違反報告により非表示（報告数: {count}）")
+                hide_cocktail(cocktail_uuid, f"違反報告により非表示（報告数: {count}）")
             
             return True
         return False
@@ -144,30 +156,30 @@ def report_violation(cocktail_id: int, reporter_ip: str, report_reason: str, rep
         print(f"違反報告エラー: {e}")
         return False
 
-def update_violation_count(cocktail_id: int):
-    """カクテルの違反報告数を更新"""
+def update_violation_count(cocktail_uuid: str):
+    """カクテルの違反報告数を更新（UUID使用）"""
     try:
         # 違反報告数をカウント
-        count_result = supabase_client.client.table('violation_reports').select('id', count='exact').eq('cocktail_id', cocktail_id).execute()
+        count_result = supabase_client.client.table('violation_reports').select('id', count='exact').eq('cocktail_id', cocktail_uuid).execute()
         count = count_result.count or 0
         
         # カクテルテーブルの違反報告数を更新
-        supabase_client.client.table('cocktails').update({'violation_reports_count': count}).eq('id', cocktail_id).execute()
+        supabase_client.client.table('cocktails').update({'violation_reports_count': count}).eq('id', cocktail_uuid).execute()
         
         return count
     except Exception as e:
         print(f"違反報告数更新エラー: {e}")
         return 0
 
-def hide_cocktail(cocktail_id: int, reason: str = '違反報告により非表示'):
-    """カクテルを非表示にする"""
+def hide_cocktail(cocktail_uuid: str, reason: str = '違反報告により非表示'):
+    """カクテルを非表示にする（UUID使用）"""
     try:
         from datetime import datetime
         result = supabase_client.client.table('cocktails').update({
             'is_visible': False,
             'hidden_at': datetime.now().isoformat(),
             'hidden_reason': reason
-        }).eq('id', cocktail_id).execute()
+        }).eq('id', cocktail_uuid).execute()
         
         return len(result.data) > 0
     except Exception as e:
@@ -188,7 +200,7 @@ def show_cocktail(cocktail_id: int):
         print(f"カクテル再表示エラー: {e}")
         return False
 
-def get_violation_reports(cocktail_id: int = None, status_filter: str = None, show_all: bool = False):
+def get_violation_reports(cocktail_id: str = None, status_filter: str = None, show_all: bool = False):
     """違反報告一覧を取得（カクテル情報を含む）"""
     try:
         print(f"違反報告取得開始 - cocktail_id: {cocktail_id}, status_filter: {status_filter}, show_all: {show_all}")
@@ -222,6 +234,7 @@ def get_violation_reports(cocktail_id: int = None, status_filter: str = None, sh
         ''')
         
         if cocktail_id:
+            # cocktail_idはUUID文字列として扱う
             query = query.eq('cocktail_id', cocktail_id)
         
         # ステータスフィルター処理
@@ -265,15 +278,33 @@ def get_violation_reports(cocktail_id: int = None, status_filter: str = None, sh
             if cocktail.get('flavor_ratio4', '0%') != '0%':
                 recipe.append({'syrup': 'ホワイト', 'ratio': cocktail.get('flavor_ratio4', '0%')})
             
-            # 画像URLの処理（バケットから取得）
+            # 画像URLの処理（バケットから取得・ID対応）
+            cocktail_uuid = cocktail.get('id', '')
             order_id = cocktail.get('order_id', '')
-            if order_id:
-                # Supabaseバケットから画像URLを生成
-                # ファイルパスは `cocktails/{order_id}.png` の形式
-                filename = f"cocktails/{order_id}.png"
+            image_url = ''
+            
+            if cocktail_uuid:
+                # UUIDベースのファイル名で画像URL生成
+                filename = f"cocktails/{cocktail_uuid}.png"
                 url_response = supabase_client.client.storage.from_("cocktail-images").get_public_url(filename)
                 
                 # URL レスポンスの構造を確認
+                if hasattr(url_response, 'public_url'):
+                    image_url = url_response.public_url
+                elif hasattr(url_response, 'publicURL'):
+                    image_url = url_response.publicURL
+                elif isinstance(url_response, str):
+                    image_url = url_response
+                elif isinstance(url_response, dict):
+                    image_url = url_response.get('public_url') or url_response.get('publicURL') or ''
+                else:
+                    image_url = str(url_response) if url_response else ''
+                    
+            elif order_id:
+                # フォールバック：UUIDがない場合は古いorder_id形式で試す
+                filename = f"cocktails/{order_id}.png"
+                url_response = supabase_client.client.storage.from_("cocktail-images").get_public_url(filename)
+                
                 if hasattr(url_response, 'public_url'):
                     image_url = url_response.public_url
                 elif hasattr(url_response, 'publicURL'):
@@ -382,9 +413,9 @@ def create_survey_question(question_data: dict) -> Optional[str]:
     """アンケート質問項目を作成"""
     return supabase_client.create_survey_question(question_data)
 
-def submit_survey_response(survey_id: str, cocktail_id: Optional[int], answers: List[Dict[str, Any]]) -> Optional[str]:
-    """アンケート回答を送信"""
-    return supabase_client.submit_survey_response(survey_id, cocktail_id, answers)
+def submit_survey_response(survey_id: str, cocktail_uuid: Optional[str], answers: List[Dict[str, Any]]) -> Optional[str]:
+    """アンケート回答を送信（UUID使用）"""
+    return supabase_client.submit_survey_response(survey_id, cocktail_uuid, answers)
 
 def get_survey_responses(survey_id: str, limit: int = None, offset: int = 0) -> Dict[str, Any]:
     """アンケート回答一覧を取得"""
@@ -417,23 +448,50 @@ def get_cocktails_count_by_event(event_id: Union[str, uuid.UUID]) -> int:
         print(f"イベントカクテル数取得エラー: {e}")
         return 0
 
-def get_violation_report_by_cocktail_and_reporter(cocktail_id: int, reporter_ip: str) -> Optional[Dict[str, Any]]:
-    """カクテルIDと報告者IPで違反報告を取得"""
+def get_violation_report_by_cocktail_and_reporter(cocktail_uuid: str, reporter_ip: str) -> Optional[Dict[str, Any]]:
+    """カクテルUUIDと報告者IPで違反報告を取得"""
     try:
-        result = supabase_client.client.table('violation_reports').select('*').eq('cocktail_id', cocktail_id).eq('reporter_id', reporter_ip).execute()
+        result = supabase_client.client.table('violation_reports').select('*').eq('cocktail_id', cocktail_uuid).eq('reporter_id', reporter_ip).execute()
         return result.data[0] if result.data else None
     except Exception as e:
         print(f"違反報告取得エラー: {e}")
         return None
 
-def get_violation_reports_count(cocktail_id: int) -> int:
+def get_violation_reports_count(cocktail_uuid: str) -> int:
     """カクテルの違反報告数を取得"""
     try:
-        result = supabase_client.client.table('violation_reports').select('id', count='exact').eq('cocktail_id', cocktail_id).execute()
+        result = supabase_client.client.table('violation_reports').select('id', count='exact').eq('cocktail_id', cocktail_uuid).execute()
         return result.count or 0
     except Exception as e:
         print(f"違反報告数取得エラー: {e}")
         return 0
+
+def get_cocktail_by_uuid(cocktail_uuid: str) -> Optional[Dict[str, Any]]:
+    """IDでカクテルを取得"""
+    try:
+        result = supabase_client.client.table('cocktails').select('*').eq('id', cocktail_uuid).execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        print(f"カクテル取得エラー（ID）: {e}")
+        return None
+
+def hide_cocktail_by_uuid(cocktail_uuid: str, reason: str) -> bool:
+    """IDでカクテルを非表示にする"""
+    try:
+        result = supabase_client.client.table('cocktails').update({
+            'is_visible': False,
+            'hidden_reason': reason
+        }).eq('id', cocktail_uuid).execute()
+        
+        if result.data:
+            print(f"カクテル非表示成功（ID）: {cocktail_uuid}")
+            return True
+        else:
+            print(f"カクテル非表示失敗（ID）: {cocktail_uuid}")
+            return False
+    except Exception as e:
+        print(f"カクテル非表示エラー（ID）: {e}")
+        return False
 
 def get_violation_report_by_id(report_id: int) -> Optional[Dict[str, Any]]:
     """IDで違反報告を取得"""

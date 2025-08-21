@@ -47,17 +47,36 @@ def generate_response(order_id_str: str) -> dict:
     if not cocktail_data:
         raise HTTPException(status_code=404, detail="注文番号が無効です。")
     
-    # 画像をSupabaseから取得してbase64に変換
+    # 画像をSupabaseから取得してbase64に変換（UUID対応）
     image_data = ''
-    if order_id_str:
-        # order_idから画像ファイル名を生成
+    cocktail_uuid = cocktail_data.get('id', '')
+    
+    if cocktail_uuid:
+        # UUIDから画像ファイル名を生成
+        filename = f"cocktails/{cocktail_uuid}.png"
+        base64_image = download_image_from_storage(filename)
+        if base64_image:
+            image_data = base64_image
+            print(f"[DEBUG] UUID画像取得成功: {cocktail_uuid}")
+        else:
+            # UUID失敗時は古いorder_id形式でも試す（移行期間対応）
+            print(f"[DEBUG] UUID画像取得失敗、order_idで試行: {order_id_str}")
+            filename = f"cocktails/{order_id_str}.png"
+            base64_image = download_image_from_storage(filename)
+            if base64_image:
+                image_data = base64_image
+                print(f"[DEBUG] order_id画像取得成功: {order_id_str}")
+            else:
+                print(f"[WARNING] 画像ダウンロード失敗: uuid={cocktail_uuid}, order_id={order_id_str}")
+    elif order_id_str:
+        # UUIDがない場合は古い形式で試す（フォールバック）
         filename = f"cocktails/{order_id_str}.png"
         base64_image = download_image_from_storage(filename)
         if base64_image:
             image_data = base64_image
+            print(f"[DEBUG] order_id画像取得成功（フォールバック）: {order_id_str}")
         else:
-            # ダウンロード失敗時は空文字
-            print(f"[WARNING] 画像ダウンロード失敗: order_id={order_id_str}")
+            print(f"[WARNING] 画像ダウンロード失敗（フォールバック）: order_id={order_id_str}")
     
     # データベースから取得した情報でレスポンスを構築
     return {
@@ -159,14 +178,25 @@ def deliver_cocktail(request: DeriveryRequest):
 
 @router.get("/image/{order_id}")
 def get_cocktail_image(order_id: str):
-    """カクテル画像取得"""
+    """カクテル画像取得（UUID対応）"""
     try:
-        # まず静的ファイルから検索
+        # データベースからカクテル情報を取得してUUIDを確認
+        cocktail_data = dbmodule.get_cocktail_by_order_id(order_id)
+        cocktail_uuid = cocktail_data.get('id', '') if cocktail_data else ''
+        
+        # まず静的ファイルから検索（古いファイルの場合）
         image_path = Path(settings.IMAGE_FOLDER) / f"{order_id}.png"
         if image_path.exists():
             return {"image_base64": encode_image_to_base64(image_path)}
         
-        # Supabaseから画像を取得
+        # UUIDが利用可能な場合はUUID形式で取得を試みる
+        if cocktail_uuid:
+            filename = f"cocktails/{cocktail_uuid}.png"
+            base64_image = download_image_from_storage(filename)
+            if base64_image:
+                return {"image_base64": base64_image}
+        
+        # フォールバック：古いorder_id形式で試す
         filename = f"cocktails/{order_id}.png"
         base64_image = download_image_from_storage(filename)
         if base64_image:

@@ -119,18 +119,38 @@ async def get_order_legacy(
                     {"syrup": "ホワイト", "ratio": c.get('flavor_ratio4', '')},
                 ]
                 
-                # 画像をSupabaseから取得してbase64に変換
+                # 画像をSupabaseから取得してbase64に変換（UUID対応）
+                cocktail_uuid = c.get('id', '')
                 order_id = c.get('order_id', '')
                 image_data = ''
-                if order_id:
-                    # order_idから画像ファイル名を生成
+                
+                if cocktail_uuid:
+                    # UUIDから画像ファイル名を生成
+                    filename = f"cocktails/{cocktail_uuid}.png"
+                    base64_image = download_image_from_storage(filename)
+                    if base64_image:
+                        image_data = base64_image
+                        print(f"[DEBUG] UUID画像取得成功: {cocktail_uuid}")
+                    else:
+                        # UUID失敗時は古いorder_id形式でも試す（移行期間対応）
+                        print(f"[DEBUG] UUID画像取得失敗、order_idで試行: {order_id}")
+                        if order_id:
+                            filename = f"cocktails/{order_id}.png"
+                            base64_image = download_image_from_storage(filename)
+                            if base64_image:
+                                image_data = base64_image
+                                print(f"[DEBUG] order_id画像取得成功: {order_id}")
+                            else:
+                                print(f"[WARNING] 画像ダウンロード失敗: uuid={cocktail_uuid}, order_id={order_id}")
+                elif order_id:
+                    # UUIDがない場合は古い形式で試す
                     filename = f"cocktails/{order_id}.png"
                     base64_image = download_image_from_storage(filename)
                     if base64_image:
                         image_data = base64_image
+                        print(f"[DEBUG] order_id画像取得成功（フォールバック）: {order_id}")
                     else:
-                        # ダウンロード失敗時は空文字
-                        print(f"[WARNING] 画像ダウンロード失敗: order_id={order_id}")
+                        print(f"[WARNING] 画像ダウンロード失敗（フォールバック）: order_id={order_id}")
                 
                 cocktail_info = {
                     "order_id": c.get('order_id'),

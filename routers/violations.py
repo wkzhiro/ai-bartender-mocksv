@@ -87,7 +87,7 @@ def show_cocktail(order_id: str):
 
 @router.get("/violation-reports/", response_model=List[Dict[str, Any]])
 def get_violation_reports(
-    cocktail_id: Optional[int] = Query(None, description="特定カクテルの報告のみ取得"),
+    cocktail_id: Optional[str] = Query(None, description="特定カクテルの報告のみ取得"),
     status: Optional[str] = Query(None, description="特定ステータスの報告のみ取得"),
     show_all: bool = Query(False, description="全ステータスの報告を取得")
 ):

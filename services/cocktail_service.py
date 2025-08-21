@@ -1,6 +1,7 @@
 """
 カクテル生成関連のビジネスロジック
 """
+import uuid
 import requests
 from typing import Dict, List, Optional, Any
 from datetime import datetime
@@ -37,22 +38,26 @@ class CocktailService:
             if recipe_data["result"] != "success":
                 return CreateCocktailResponse(result="error", detail=recipe_data["detail"])
             
-            # 3. 注文ID生成
+            # 3. 注文IDとUUID生成
             order_id = generate_order_id()
             if not order_id:
                 return CreateCocktailResponse(result="error", detail="注文番号の生成に失敗しました")
             
-            # 4. 画像生成
+            # カクテル用のUUIDを生成
+            cocktail_uuid = str(uuid.uuid4())
+            print(f"[DEBUG] 生成されたUUID: {cocktail_uuid}")
+            
+            # 4. 画像生成（UUIDを使用）
             image_data = await CocktailService._generate_image(
-                recipe_data["data"], req, use_storage, order_id
+                recipe_data["data"], req, use_storage, cocktail_uuid
             )
             if image_data["result"] != "success":
                 return CreateCocktailResponse(result="error", detail=image_data["detail"])
             
-            # 5. データベース保存
+            # 5. データベース保存（UUIDを含む）
             db_result = await CocktailService._save_to_database(
                 recipe_data["data"], image_data, order_id, req, 
-                event_id, save_user_info
+                event_id, save_user_info, cocktail_uuid
             )
             if db_result["result"] != "success":
                 return CreateCocktailResponse(result="error", detail=db_result["detail"])
@@ -309,7 +314,7 @@ class CocktailService:
         recipe_data: Dict, 
         req: CreateCocktailRequest, 
         use_storage: bool, 
-        order_id: str
+        cocktail_uuid: str
     ) -> Dict[str, Any]:
         """画像生成処理"""
         try:
@@ -387,9 +392,9 @@ class CocktailService:
             # 保存方法による分岐
             print(f"[DEBUG] use_storage判定: {use_storage}")
             if use_storage:
-                print(f"[DEBUG] Supabaseストレージアップロード開始 - order_id: {order_id}")
+                print(f"[DEBUG] Supabaseストレージアップロード開始 - UUID: {cocktail_uuid}")
                 try:
-                    url = upload_image_to_storage(processed_image, order_id)
+                    url = upload_image_to_storage(processed_image, cocktail_uuid)
                     print(f"[DEBUG] Supabaseストレージアップロード完了 - URL: {url}")
                     return {"result": "success", "image": processed_image, "url": url}
                 except Exception as storage_error:
@@ -415,7 +420,8 @@ class CocktailService:
         order_id: str,
         req: CreateCocktailRequest,
         event_id: Optional[str],
-        save_user_info: bool
+        save_user_info: bool,
+        cocktail_uuid: str
     ) -> Dict[str, Any]:
         """データベース保存処理"""
         try:
@@ -450,8 +456,9 @@ class CocktailService:
                 elif syrup == "ホワイト":
                     flavor_ratios[3] = ratio
             
-            # DB保存データ構築（画像はSupabase Storageに保存済みのため、DBには保存しない）
+            # DB保存データ構築（IDをプライマリキーとして使用）
             db_data = {
+                "id": cocktail_uuid,  # IDをプライマリキーとして指定
                 "order_id": order_id,
                 "status": 200,
                 "name": recipe_data.get("cocktail_name", ""),
@@ -468,16 +475,16 @@ class CocktailService:
                 "event_id": event_id,
             }
             
-            print(f"[DEBUG] DB挿入データ準備完了: order_id={order_id}, name={recipe_data.get('cocktail_name', '')}")
+            print(f"[DEBUG] DB挿入データ準備完了: order_id={order_id}, name={recipe_data.get('cocktail_name', '')}, uuid={cocktail_uuid}")
             
             # DB挿入
-            inserted_id = dbmodule.insert_cocktail(db_data)
-            if not inserted_id:
-                error_msg = f"DB挿入失敗 - inserted_id: {inserted_id}"
+            inserted_uuid = dbmodule.insert_cocktail(db_data)
+            if not inserted_uuid:
+                error_msg = f"DB挿入失敗 - inserted_uuid: {inserted_uuid}"
                 print(f"[ERROR] {error_msg}")
                 return {"result": "error", "detail": error_msg}
             
-            print(f"[DEBUG] DB保存完了 - inserted_id: {inserted_id}")
+            print(f"[DEBUG] DB保存完了 - inserted_uuid: {inserted_uuid}")
             
             # アンケート回答保存
             if req.survey_responses and event_id:
@@ -495,7 +502,7 @@ class CocktailService:
                         ]
                         
                         survey_response_id = dbmodule.submit_survey_response(
-                            survey_id, inserted_id, answers_data
+                            survey_id, inserted_uuid, answers_data  # UUIDを使用
                         )
                         if survey_response_id:
                             print(f"[DEBUG] アンケート回答保存完了: {survey_response_id}")
@@ -504,11 +511,11 @@ class CocktailService:
             
             # プロンプトリンク処理
             try:
-                CocktailService._link_prompts(inserted_id, req)
+                CocktailService._link_prompts(inserted_uuid, req)  # UUIDを使用
             except Exception as prompt_error:
                 print(f"[WARNING] プロンプトリンクエラー（継続）: {prompt_error}")
             
-            return {"result": "success", "inserted_id": inserted_id}
+            return {"result": "success", "inserted_uuid": inserted_uuid}
             
         except Exception as e:
             error_msg = f"DB保存例外: {str(e)}"
@@ -516,28 +523,28 @@ class CocktailService:
             import traceback
             tb = traceback.format_exc()
             print(f"[ERROR] Traceback: {tb}")
-            return {"result": "error", "detail": f"{error_msg}\\n{tb}"}
+            return {"result": "error", "detail": f"{error_msg}\n{tb}"}
     
     @staticmethod
-    def _link_prompts(inserted_id: int, req: CreateCocktailRequest):
-        """プロンプトリンク処理"""
+    def _link_prompts(inserted_uuid: str, req: CreateCocktailRequest):
+        """プロンプトリンク処理（UUID対応）"""
         # レシピプロンプト
         if req.recipe_prompt_id:
-            dbmodule.link_cocktail_prompt(inserted_id, req.recipe_prompt_id, 'recipe')
+            dbmodule.link_cocktail_prompt(inserted_uuid, req.recipe_prompt_id, 'recipe')
         else:
             default_recipe_prompts = dbmodule.get_prompts('recipe', True)
             if default_recipe_prompts:
                 default_prompt_id = default_recipe_prompts[0]['id']
-                dbmodule.link_cocktail_prompt(inserted_id, default_prompt_id, 'recipe')
+                dbmodule.link_cocktail_prompt(inserted_uuid, default_prompt_id, 'recipe')
         
         # 画像プロンプト
         if req.image_prompt_id:
-            dbmodule.link_cocktail_prompt(inserted_id, req.image_prompt_id, 'image')
+            dbmodule.link_cocktail_prompt(inserted_uuid, req.image_prompt_id, 'image')
         else:
             default_image_prompts = dbmodule.get_prompts('image', True)
             if default_image_prompts:
                 default_prompt_id = default_image_prompts[0]['id']
-                dbmodule.link_cocktail_prompt(inserted_id, default_prompt_id, 'image')
+                dbmodule.link_cocktail_prompt(inserted_uuid, default_prompt_id, 'image')
 
     @staticmethod
     def get_all_cocktails(limit: Optional[int] = None, offset: int = 0, event_id: Optional[str] = None) -> Dict[str, Any]:

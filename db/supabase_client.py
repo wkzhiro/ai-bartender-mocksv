@@ -30,12 +30,15 @@ class SupabaseClient:
         print("   - migration/20250130_06_create_triggers.sql")
         print("\n詳細は migration/migration_history.md を参照してください。")
     
-    def insert_cocktail(self, data: Dict[str, Any]) -> Optional[int]:
-        """カクテルデータを挿入"""
+    def insert_cocktail(self, data: Dict[str, Any]) -> Optional[str]:
+        """カクテルデータを挿入（UUIDプライマリキー使用）"""
         try:
+            # idが指定されていない場合、データベース側でgen_random_uuid()が自動生成される
+            print(f"[DEBUG] カクテル挿入 - id: {data.get('id', 'auto-generate')}")
+            
             result = self.client.table('cocktails').insert(data).execute()
             if result.data:
-                return result.data[0]['id']
+                return result.data[0]['id']  # ID文字列を返す
             return None
         except Exception as e:
             print(f"Supabase挿入エラー(cocktails): {e}")
@@ -48,6 +51,33 @@ class SupabaseClient:
             return result.data[0] if result.data else None
         except Exception as e:
             print(f"Supabase取得エラー: {e}")
+            return None
+
+    def get_cocktail_by_id(self, cocktail_id: str) -> Optional[Dict[str, Any]]:
+        """UUIDでカクテルを取得（プライマリキーがUUIDに変更済み）"""
+        try:
+            result = self.client.table('cocktails').select('*').eq('id', cocktail_id).execute()
+            return result.data[0] if result.data else None
+        except Exception as e:
+            print(f"カクテル取得エラー: {e}")
+            return None
+
+    def get_uuid_from_order_id(self, order_id: str) -> Optional[str]:
+        """order_idからUUIDを取得"""
+        try:
+            result = self.client.table('cocktails').select('uuid').eq('order_id', order_id).execute()
+            return result.data[0]['uuid'] if result.data else None
+        except Exception as e:
+            print(f"UUID取得エラー: {e}")
+            return None
+
+    def get_order_id_from_uuid(self, uuid_id: str) -> Optional[str]:
+        """UUIDからorder_idを取得"""
+        try:
+            result = self.client.table('cocktails').select('order_id').eq('id', uuid_id).execute()
+            return result.data[0]['order_id'] if result.data else None
+        except Exception as e:
+            print(f"order_id取得エラー: {e}")
             return None
     
     def get_all_cocktails(self, limit: int = None, offset: int = 0, event_id: Union[str, uuid.UUID] = None) -> Dict[str, Any]:
@@ -113,8 +143,8 @@ class SupabaseClient:
     def _get_total_count_safe(self, event_id: Union[str, uuid.UUID] = None) -> int:
         """安全に全件数を取得（タイムアウト対応）、event_idでフィルター可能"""
         try:
-            # 方法1: 最も軽量なカウントクエリ（IDのみ、制限なし）
-            query = self.client.table('cocktails').select('id', count='exact').eq('is_visible', True).limit(1)
+            # 方法1: 最も軽量なカウントクエリ（UUIDのみ、制限なし）
+            query = self.client.table('cocktails').select('uuid', count='exact').eq('is_visible', True).limit(1)
             if event_id is not None:
                 # UUIDの場合は文字列に変換
                 event_id_str = str(event_id) if isinstance(event_id, uuid.UUID) else event_id
@@ -143,7 +173,7 @@ class SupabaseClient:
             limit_chunk = 1000
             for i in range(10):  # 最大10000件まで
                 offset_chunk = i * limit_chunk
-                chunk_result = self.client.table('cocktails').select('id').eq('is_visible', True).limit(limit_chunk).offset(offset_chunk).execute()
+                chunk_result = self.client.table('cocktails').select('uuid').eq('is_visible', True).limit(limit_chunk).offset(offset_chunk).execute()
                 chunk_count = len(chunk_result.data) if chunk_result.data else 0
                 total_estimated += chunk_count
                 
@@ -163,15 +193,15 @@ class SupabaseClient:
     def _get_total_count_efficient(self) -> int:
         """効率的に全件数を取得"""
         try:
-            # IDのみを取得してカウント（軽量なクエリ）
-            count_result = self.client.table('cocktails').select('id', count='exact').limit(1).execute()
+            # UUIDのみを取得してカウント（軽量なクエリ）
+            count_result = self.client.table('cocktails').select('uuid', count='exact').limit(1).execute()
             return count_result.count or 0
         except Exception as e:
             print(f"件数取得エラー: {e}")
             # エラー時は概算値として、現在取得できている最大ID+オフセットを返す
             try:
                 # 最新の1件だけ取得してIDベースで概算
-                latest = self.client.table('cocktails').select('id').order('created_at', desc=True).limit(1).execute()
+                latest = self.client.table('cocktails').select('uuid').order('created_at', desc=True).limit(1).execute()
                 if latest.data and len(latest.data) > 0:
                     # 概算として適当な値を返す（実際のプロダクションでは要調整）
                     return 1000  # 仮の概算値
@@ -193,7 +223,7 @@ class SupabaseClient:
     def table_exists(self, table_name: str) -> bool:
         """テーブルの存在確認"""
         try:
-            result = self.client.table(table_name).select('id').limit(1).execute()
+            result = self.client.table(table_name).select('*').limit(1).execute()
             return True
         except:
             return False
@@ -242,14 +272,14 @@ class SupabaseClient:
             print(f"プロンプト更新エラー: {e}")
             return False
     
-    def link_cocktail_prompt(self, cocktail_id: int, prompt_id: int, prompt_type: str) -> bool:
-        """カクテルとプロンプトを関連付け"""
+    def link_cocktail_prompt(self, cocktail_uuid: str, prompt_id: int, prompt_type: str) -> bool:
+        """カクテルとプロンプトを関連付け（UUID使用）"""
         try:
             # 既存のレコードを削除してから新しいレコードを挿入（UPSERT的な動作）
-            self.client.table('cocktail_prompts').delete().eq('cocktail_id', cocktail_id).eq('prompt_type', prompt_type).execute()
+            self.client.table('cocktail_prompts').delete().eq('cocktail_id', cocktail_uuid).eq('prompt_type', prompt_type).execute()
             
             data = {
-                'cocktail_id': cocktail_id,
+                'cocktail_id': cocktail_uuid,  # UUIDを使用
                 'prompt_id': prompt_id,
                 'prompt_type': prompt_type
             }
@@ -259,23 +289,23 @@ class SupabaseClient:
             print(f"カクテル-プロンプト関連付けエラー: {e}")
             return False
     
-    def get_cocktail_prompts(self, cocktail_id: int) -> List[Dict[str, Any]]:
-        """カクテルに関連付けられたプロンプトを取得"""
+    def get_cocktail_prompts(self, cocktail_uuid: str) -> List[Dict[str, Any]]:
+        """カクテルに関連付けられたプロンプトを取得（UUID使用）"""
         try:
             result = self.client.table('cocktail_prompts').select(
                 'prompt_id, prompt_type, prompts(id, prompt_type, title, description, prompt_text)'
-            ).eq('cocktail_id', cocktail_id).execute()
+            ).eq('cocktail_id', cocktail_uuid).execute()
             return result.data or []
         except Exception as e:
             print(f"カクテル-プロンプト取得エラー: {e}")
             return []
     
-    def get_cocktail_prompt_by_type(self, cocktail_id: int, prompt_type: str) -> Optional[Dict[str, Any]]:
-        """カクテルの特定タイプのプロンプトを取得"""
+    def get_cocktail_prompt_by_type(self, cocktail_uuid: str, prompt_type: str) -> Optional[Dict[str, Any]]:
+        """カクテルの特定タイプのプロンプトを取得（UUID使用）"""
         try:
             result = self.client.table('cocktail_prompts').select(
                 'prompt_id, prompt_type, prompts(id, prompt_type, title, description, prompt_text)'
-            ).eq('cocktail_id', cocktail_id).eq('prompt_type', prompt_type).execute()
+            ).eq('cocktail_id', cocktail_uuid).eq('prompt_type', prompt_type).execute()
             return result.data[0] if result.data else None
         except Exception as e:
             print(f"カクテル-プロンプト取得エラー: {e}")
@@ -613,13 +643,13 @@ class SupabaseClient:
             traceback.print_exc()
             return None
     
-    def submit_survey_response(self, survey_id: str, cocktail_id: Optional[int], answers: List[Dict[str, Any]]) -> Optional[str]:
-        """アンケート回答を送信"""
+    def submit_survey_response(self, survey_id: str, cocktail_uuid: Optional[str], answers: List[Dict[str, Any]]) -> Optional[str]:
+        """アンケート回答を送信（UUID使用）"""
         try:
             # 回答レコード作成
             response_data = {
                 'survey_id': survey_id,
-                'cocktail_id': cocktail_id
+                'cocktail_id': cocktail_uuid  # UUIDを使用
             }
             response_result = self.client.table('survey_responses').insert(response_data).execute()
             if not response_result.data:

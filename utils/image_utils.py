@@ -68,10 +68,10 @@ def crop_and_resize_base64_image(
         raise Exception(f"画像加工エラー: {str(e)}")
 
 
-def upload_image_to_storage(image_base64: str, order_id: str) -> str:
-    """Supabase Storageに画像をアップロードしURLを返す"""
+def upload_image_to_storage(image_base64: str, cocktail_id: str) -> str:
+    """Supabase Storageに画像をアップロードし、URLを返す（UUID使用）"""
     try:
-        print(f"[DEBUG] upload_image_to_storage開始 - order_id: {order_id}")
+        print(f"[DEBUG] upload_image_to_storage開始 - cocktail_id: {cocktail_id}")
         
         # base64ヘッダーを除去
         if "," in image_base64:
@@ -81,8 +81,8 @@ def upload_image_to_storage(image_base64: str, order_id: str) -> str:
         image_bytes = base64.b64decode(image_base64)
         print(f"[DEBUG] 画像バイナリサイズ: {len(image_bytes)} bytes")
         
-        # ファイル名を生成
-        filename = f"cocktails/{order_id}.png"
+        # ファイル名をUUIDベースで生成
+        filename = f"cocktails/{cocktail_id}.png"
         print(f"[DEBUG] アップロードファイル名: {filename}")
         
         # Supabase Storageにアップロード
@@ -143,6 +143,58 @@ def upload_image_to_storage(image_base64: str, order_id: str) -> str:
         import traceback
         traceback.print_exc()
         raise Exception(f"画像アップロードエラー: {str(e)}")
+
+def upload_image_by_order_id(image_base64: str, order_id: str) -> str:
+    """order_idを使用した外部API互換性のための画像アップロード"""
+    from db import database as dbmodule
+    
+    try:
+        # order_idからUUIDを取得
+        cocktail_id = dbmodule.get_uuid_from_order_id(order_id)
+        if not cocktail_id:
+            raise Exception(f"order_id {order_id} に対応するカクテルが見つかりません")
+        
+        # UUIDベースでアップロード
+        return upload_image_to_storage(image_base64, cocktail_id)
+    except Exception as e:
+        print(f"[ERROR] upload_image_by_order_id失敗: {str(e)}")
+        raise
+
+def get_image_url_by_uuid(cocktail_id: str) -> Optional[str]:
+    """UUID IDで画像URLを取得"""
+    try:
+        filename = f"cocktails/{cocktail_id}.png"
+        url_response = supabase_client.client.storage.from_("cocktail-images").get_public_url(filename)
+        
+        if hasattr(url_response, 'public_url'):
+            return url_response.public_url
+        elif hasattr(url_response, 'publicURL'):
+            return url_response.publicURL
+        elif isinstance(url_response, str):
+            return url_response
+        elif isinstance(url_response, dict):
+            return url_response.get('public_url') or url_response.get('publicURL')
+        else:
+            return str(url_response)
+    except Exception as e:
+        print(f"[ERROR] UUID画像URL取得エラー: {e}")
+        return None
+
+def get_image_url_by_order_id(order_id: str) -> Optional[str]:
+    """order_idで画像URLを取得（外部API互換性）"""
+    from db import database as dbmodule
+    
+    try:
+        # order_idからUUIDを取得
+        cocktail_id = dbmodule.get_uuid_from_order_id(order_id)
+        if not cocktail_id:
+            return None
+        
+        # UUIDベースで画像URL取得
+        return get_image_url_by_uuid(cocktail_id)
+    except Exception as e:
+        print(f"[ERROR] order_id画像URL取得エラー: {e}")
+        return None
 
 
 def download_image_from_storage(filename_or_url: str) -> Optional[str]:

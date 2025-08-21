@@ -24,24 +24,25 @@ class ViolationService:
                 print(f"[ERROR] 指定された注文番号のカクテルが見つかりません: {report_data.order_id}")
                 return False
             
-            cocktail_id = cocktail.get('id')
-            if not cocktail_id:
-                print(f"[ERROR] カクテルのIDが取得できません: {report_data.order_id}")
+            # UUIDマイグレーション後はidを使用
+            cocktail_uuid = cocktail.get('id')
+            if not cocktail_uuid:
+                print(f"[ERROR] カクテルのUUIDが取得できません: {report_data.order_id}")
                 return False
             
-            print(f"[DEBUG] 注文番号 {report_data.order_id} → カクテルID {cocktail_id}")
+            print(f"[DEBUG] 注文番号 {report_data.order_id} → カクテルUUID {cocktail_uuid}")
             
-            # 重複報告チェック
+            # 重複報告チェック（UUID使用）
             existing_report = dbmodule.get_violation_report_by_cocktail_and_reporter(
-                cocktail_id, reporter_ip
+                cocktail_uuid, reporter_ip
             )
             if existing_report:
                 print(f"[WARNING] 同じIPからの重複報告: {reporter_ip}")
                 return False
             
-            # 違反報告を保存
+            # 違反報告を保存（UUID使用）
             success = dbmodule.report_violation(
-                cocktail_id,
+                cocktail_uuid,
                 reporter_ip,
                 report_data.report_reason,
                 report_data.report_category
@@ -51,14 +52,14 @@ class ViolationService:
                 print(f"[DEBUG] 違反報告提出成功")
                 
                 # 違反報告数に応じた自動処理
-                violation_count = dbmodule.get_violation_reports_count(cocktail_id)
+                violation_count = dbmodule.get_violation_reports_count(cocktail_uuid)
                 print(f"[DEBUG] カクテルの違反報告数: {violation_count}")
                 
                 # 閾値を超えた場合の自動非表示処理
                 auto_hide_threshold = 1  # 1件の報告で自動非表示
                 if violation_count >= auto_hide_threshold:
                     hide_reason = f"違反報告により自動非表示（報告数: {violation_count}）"
-                    ViolationService.hide_cocktail_by_id(cocktail_id, hide_reason)
+                    ViolationService.hide_cocktail_by_id(cocktail_uuid, hide_reason)
                 
                 return True
             else:
@@ -70,34 +71,34 @@ class ViolationService:
             return False
     
     @staticmethod
-    def hide_cocktail_by_id(cocktail_id: int, reason: str) -> bool:
-        """カクテルを非表示にする（内部ID使用）"""
+    def hide_cocktail_by_id(cocktail_uuid: str, reason: str) -> bool:
+        """カクテルを非表示にする（UUID使用）"""
         try:
-            print(f"[DEBUG] カクテル非表示処理開始（ID使用): {cocktail_id}")
+            print(f"[DEBUG] カクテル非表示処理開始（UUID使用): {cocktail_uuid}")
             
             # カクテル存在確認
-            cocktail = dbmodule.get_cocktail_by_id(cocktail_id)
+            cocktail = dbmodule.get_cocktail_by_uuid(cocktail_uuid)
             if not cocktail:
-                print(f"[ERROR] 指定されたカクテルが見つかりません（ID）: {cocktail_id}")
+                print(f"[ERROR] 指定されたカクテルが見つかりません（UUID）: {cocktail_uuid}")
                 return False
             
             # 既に非表示の場合はスキップ
             if not cocktail.get('is_visible', True):
-                print(f"[INFO] カクテルは既に非表示です（ID）: {cocktail_id}")
+                print(f"[INFO] カクテルは既に非表示です（UUID）: {cocktail_uuid}")
                 return True
             
             # 非表示処理
-            success = dbmodule.hide_cocktail(cocktail_id, reason)
+            success = dbmodule.hide_cocktail_by_uuid(cocktail_uuid, reason)
             
             if success:
-                print(f"[DEBUG] カクテル非表示完了（ID）: {cocktail_id}")
+                print(f"[DEBUG] カクテル非表示完了（UUID）: {cocktail_uuid}")
                 return True
             else:
-                print(f"[ERROR] カクテル非表示失敗（ID）: {cocktail_id}")
+                print(f"[ERROR] カクテル非表示失敗（UUID）: {cocktail_uuid}")
                 return False
                 
         except Exception as e:
-            print(f"[ERROR] カクテル非表示エラー（ID）: {e}")
+            print(f"[ERROR] カクテル非表示エラー（UUID）: {e}")
             return False
     
     @staticmethod
@@ -174,7 +175,7 @@ class ViolationService:
     
     @staticmethod
     def get_violation_reports(
-        cocktail_id: Optional[int] = None,
+        cocktail_id: Optional[str] = None,
         status_filter: Optional[str] = None,
         show_all: bool = False
     ) -> List[Dict[str, Any]]:

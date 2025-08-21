@@ -132,17 +132,28 @@ class AnswerData(BaseModel):
 
 class SurveyResponseRequest(BaseModel):
     survey_id: str
-    cocktail_id: Optional[int] = None
+    cocktail_id: Optional[str] = None  # UUID文字列に変更
     answers: List[AnswerData]
 
 
 # 違反報告関連モデル
 class ViolationReportRequest(BaseModel):
-    order_id: str  # 6桁の注文番号を使用
+    order_id: str  # 外部API互換性のため6桁の注文番号を維持
+    report_reason: str
+    report_category: str = "inappropriate"
+
+
+class ViolationReportUuidRequest(BaseModel):
+    cocktail_id: str  # 内部処理用UUID
     report_reason: str
     report_category: str = "inappropriate"
 
 
 class HideCocktailRequest(BaseModel):
-    order_id: str  # 6桁の注文番号を使用
+    order_id: str  # 外部API互換性のため6桁の注文番号を維持
+    reason: str
+
+
+class HideCocktailUuidRequest(BaseModel):
+    cocktail_id: str  # 内部処理用UUID
     reason: str

@@ -1,0 +1,96 @@
+UUID移行ログ
+==================================================
+
+1. データベースマッピング:
+   order_id: 457873 → UUID: 2
+   order_id: 640857 → UUID: 3
+   order_id: 953382 → UUID: 4
+   order_id: 478444 → UUID: 5
+   order_id: 403600 → UUID: 6
+   order_id: 272219 → UUID: 7
+   order_id: 100173 → UUID: 8
+   order_id: 853177 → UUID: 9
+   order_id: 226432 → UUID: 10
+   order_id: 601880 → UUID: 11
+   order_id: 533510 → UUID: 12
+   order_id: 468227 → UUID: 13
+   order_id: 636493 → UUID: 14
+   order_id: 945888 → UUID: 15
+   order_id: 579534 → UUID: 16
+   order_id: 465657 → UUID: 17
+   order_id: 419527 → UUID: 18
+   order_id: 483599 → UUID: 19
+   order_id: 185203 → UUID: 20
+   order_id: 179705 → UUID: 21
+   order_id: 931390 → UUID: 22
+   order_id: 639407 → UUID: 23
+   order_id: 171345 → UUID: 24
+   order_id: 703309 → UUID: 25
+   order_id: 838987 → UUID: 26
+   order_id: 512593 → UUID: 27
+   order_id: 195467 → UUID: 29
+   order_id: 888366 → UUID: 30
+   order_id: 929382 → UUID: 31
+   order_id: 189834 → UUID: 33
+   order_id: 610993 → UUID: 1
+   order_id: 353809 → UUID: 35
+   order_id: 641669 → UUID: 28
+   order_id: 670972 → UUID: 34
+   order_id: 931083 → UUID: 32
+   order_id: 597920 → UUID: 36
+   order_id: 826911 → UUID: 39
+   order_id: 515934 → UUID: 40
+   order_id: 604206 → UUID: 41
+   order_id: 867342 → UUID: 37
+   order_id: 134540 → UUID: 42
+   order_id: 197202 → UUID: 43
+   order_id: 116681 → UUID: 38
+   order_id: 260969 → UUID: 44
+
+2. 画像ファイルリネーム結果:
+   成功: 0件
+   失敗: 44件
+     457873.png → 2.png (失敗)
+     640857.png → 3.png (失敗)
+     953382.png → 4.png (失敗)
+     478444.png → 5.png (失敗)
+     403600.png → 6.png (失敗)
+     272219.png → 7.png (失敗)
+     100173.png → 8.png (失敗)
+     853177.png → 9.png (失敗)
+     226432.png → 10.png (失敗)
+     601880.png → 11.png (失敗)
+     533510.png → 12.png (失敗)
+     468227.png → 13.png (失敗)
+     636493.png → 14.png (失敗)
+     945888.png → 15.png (失敗)
+     579534.png → 16.png (失敗)
+     465657.png → 17.png (失敗)
+     419527.png → 18.png (失敗)
+     483599.png → 19.png (失敗)
+     185203.png → 20.png (失敗)
+     179705.png → 21.png (失敗)
+     931390.png → 22.png (失敗)
+     639407.png → 23.png (失敗)
+     171345.png → 24.png (失敗)
+     703309.png → 25.png (失敗)
+     838987.png → 26.png (失敗)
+     512593.png → 27.png (失敗)
+     195467.png → 29.png (失敗)
+     888366.png → 30.png (失敗)
+     929382.png → 31.png (失敗)
+     189834.png → 33.png (失敗)
+     610993.png → 1.png (失敗)
+     353809.png → 35.png (失敗)
+     641669.png → 28.png (失敗)
+     670972.png → 34.png (失敗)
+     931083.png → 32.png (失敗)
+     597920.png → 36.png (失敗)
+     826911.png → 39.png (失敗)
+     515934.png → 40.png (失敗)
+     604206.png → 41.png (失敗)
+     867342.png → 37.png (失敗)
+     134540.png → 42.png (失敗)
+     197202.png → 43.png (失敗)
+     116681.png → 38.png (失敗)
+     260969.png → 44.png (失敗)
