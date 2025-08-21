@@ -88,7 +88,7 @@ def build_recipe_system_prompt(syrup_dict: Dict[str, str], custom_prompt: Option
 出力は以下のJSON形式で返してください:
 {{
   "cocktail_name": "カクテル名",
-  "concept": "このカクテルのコンセプトや込めた想いを50文字程度で",
+  "concept": "このカクテルのコンセプトや込めた想いを50〜100文字程度で",
   "color": {{
     "name": "色の名前",
     "description": "色の詳細説明",
