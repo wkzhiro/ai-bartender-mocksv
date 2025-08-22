@@ -96,7 +96,7 @@ def generate_response(order_id_str: str) -> dict:
         "flavor_name4": "ホワイト",
         "flavor_ratio4": cocktail_data.get('flavor_ratio4', '0%'),
         "comment": cocktail_data.get('comment', ''),
-        "image_base64": image_data,
+        "image": image_data,
     }
 
 
