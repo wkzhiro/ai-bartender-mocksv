@@ -11,6 +11,7 @@ class Settings:
     # OpenAI API設定
     AZURE_OPENAI_API_KEY_LLM: Optional[str] = os.environ.get("AZURE_OPENAI_API_KEY_LLM")
     AZURE_OPENAI_ENDPOINT_LLM: Optional[str] = os.environ.get("AZURE_OPENAI_ENDPOINT_LLM")
+    AZURE_OPENAI_ENDPOINT_LLM_MINI: Optional[str] = os.environ.get("AZURE_OPENAI_ENDPOINT_LLM_MINI")
     OPENAI_API_KEY: Optional[str] = os.environ.get("OPENAI_API_KEY")
     GPT_API_KEY: Optional[str] = os.environ.get("GPT_API_KEY")
     
@@ -40,7 +41,7 @@ class Settings:
     ORDER_ID_MAX: int = 999999
     
     # ファイルパス
-    SYRUP_INFO_FILE: str = "syrup.txt"
+    SYRUP_INFO_FILE: str = "storage/syrup.txt"
     FILTER_WORDS_FILE: str = "storage/fusion_filter_words.txt"
     IMAGE_FOLDER: str = "images"
     

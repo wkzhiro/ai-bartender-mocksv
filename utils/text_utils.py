@@ -20,15 +20,19 @@ def load_syrup_info_txt() -> Dict[str, str]:
             return {}
             
         with syrup_file.open('r', encoding='utf-8') as f:
-            content = f.read()
+            lines = [line.strip() for line in f.readlines() if line.strip()]
             
         syrup_dict = {}
-        lines = content.strip().split('\n')
-        for line in lines:
-            if ':' in line:
-                key, value = line.split(':', 1)
-                syrup_dict[key.strip()] = value.strip()
-                
+        syrup_names = ['ベリー', '青りんご', 'シトラス', 'ホワイト']
+        
+        for i in range(len(lines)):
+            line = lines[i]
+            # 日本語のシロップ名の行をチェック
+            if line in syrup_names:
+                if i + 1 < len(lines):
+                    syrup_dict[line] = lines[i + 1]
+                    print(f"[DEBUG] シロップ登録: {line} -> {lines[i + 1][:50]}...")
+                    
         print(f"[DEBUG] シロップ情報読み込み完了: {len(syrup_dict)}種類")
         return syrup_dict
         
@@ -56,15 +60,51 @@ def load_fusion_filter_words() -> List[str]:
         return []
 
 
+def is_generic_name(name: str) -> bool:
+    """汎用的な名前かどうかを判定"""
+    import re
+    if not name:
+        return False
+    
+    # 汎用的なパターンをチェック
+    generic_patterns = [
+        r'^特製カクテル\d*$',
+        r'^カクテル\d+$',
+        r'^オリジナル.*\d*$',
+        r'^ミックス.*\d*$',
+        r'^今日のカクテル\d*$',
+        r'^本日のカクテル\d*$'
+    ]
+    
+    for pattern in generic_patterns:
+        if re.match(pattern, name):
+            print(f"[DEBUG] 汎用名パターンにマッチ: {name} -> {pattern}")
+            return True
+    
+    return False
+
 def validate_cocktail_name(name: str, filter_words: List[str]) -> bool:
     """カクテル名がフィルター単語に引っかからないかチェック"""
-    if not name or not filter_words:
+    if not name:
+        print("[DEBUG] 空の名前は無効")
+        return False
+    
+    # 1. 汎用名チェック（新規追加）
+    if is_generic_name(name):
+        print(f"[DEBUG] 汎用名として拒否: {name}")
+        return False
+    
+    # 2. フィルター単語チェック（既存ロジック）
+    if not filter_words:
         return True
         
     name_lower = name.lower()
     for word in filter_words:
         if word.lower() in name_lower:
+            print(f"[DEBUG] フィルター単語にマッチ: {name} -> 単語: {word}")
             return False
+    
+    print(f"[DEBUG] カクテル名検証通過: {name}")
     return True
 
 
@@ -148,26 +188,106 @@ def regenerate_cocktail_name_with_mini_llm(
     cocktail_data: Dict, 
     filter_words: List[str]
 ) -> Optional[str]:
-    """ミニLLMを使用してカクテル名を再生成"""
+    """ミニLLMを使用してカクテル名を再生成（改善版）"""
     try:
-        # 簡単なルールベースでの名前生成（実装例）
+        print("[DEBUG] 簡易再生成開始 - 汎用名回避版")
+        
+        # コンセプトや色から創造的な単語を抽出
         concept = cocktail_data.get('concept', '')
-        color = cocktail_data.get('color', '')
+        color_info = cocktail_data.get('color', {})
+        color_name = color_info.get('name', '') if isinstance(color_info, dict) else str(color_info)
         
-        # キーワードから安全な単語を抽出
-        safe_words = ['特製', '香り', '味わい', '一杯', 'カクテル', '美味', '上質']
+        # より創造的な名前の候補を生成
+        creative_prefixes = [
+            '夢見る', '輝く', '煌めく', '風の', '星空の', '虹色の', '心の', 
+            '愛の', '希望の', '幸福の', '魔法の', '神秘の', '天使の'
+        ]
         
-        # ランダムに組み合わせる
-        import datetime
-        timestamp = datetime.datetime.now().strftime("%H%M%S")
+        creative_suffixes = [
+            'ブレンド', 'エリクサー', 'ドリーム', 'ハーモニー', 'シンフォニー',
+            'ラプソディ', 'セレナーデ', 'メロディ', 'フィナーレ', 'アンサンブル'
+        ]
         
-        for word in safe_words:
-            candidate = f"{word}カクテル{timestamp[-3:]}"
+        # 色名からインスピレーションを得た名前
+        color_inspired = []
+        if color_name:
+            color_inspired = [f'{color_name}の調べ', f'{color_name}ワルツ', f'{color_name}ミスト']
+        
+        # 候補リストを作成
+        candidates = []
+        import random
+        
+        # 創造的な組み合わせを生成
+        for prefix in creative_prefixes[:5]:  # 最初の5個
+            for suffix in creative_suffixes[:3]:  # 最初の3個
+                candidates.append(f'{prefix}{suffix}')
+        
+        # 色にインスパイアされた名前を追加
+        candidates.extend(color_inspired)
+        
+        # ランダムに並び替え
+        random.shuffle(candidates)
+        
+        print(f"[DEBUG] 生成した候補: {len(candidates)}個")
+        
+        # 各候補をテスト
+        for candidate in candidates:
+            print(f"[DEBUG] 候補テスト: {candidate}")
             if validate_cocktail_name(candidate, filter_words):
+                print(f"[DEBUG] 簡易再生成成功: {candidate}")
                 return candidate
+            else:
+                print(f"[DEBUG] 候補拒否: {candidate}")
                 
+        print("[DEBUG] 全ての候補が拒否されました")
         return None
         
     except Exception as e:
         print(f"[ERROR] カクテル名再生成エラー: {e}")
         return None
+
+
+def regenerate_name_with_alternative_prompt(
+    cocktail_data: Dict, 
+    filter_words: List[str],
+    original_name: str
+) -> Optional[str]:
+    """別のプロンプト戦略でフィルターを回避したカクテル名を生成"""
+    from utils.openai_direct import generate_chat_completion_direct
+    
+    # 別のアプローチのプロンプト（フィルター単語を明示的に避ける）
+    prompt = f"""
+あなたは創造的なバーテンダーです。以下のカクテルに新しい名前をつけてください。
+
+カクテル情報:
+- 元の名前: {original_name}（この名前は使用できません）
+- コンセプト: {cocktail_data.get('concept', '')}
+- 色: {cocktail_data.get('color', {}).get('name', '')}
+- 色の説明: {cocktail_data.get('color', {}).get('description', '')}
+
+制約事項:
+- 次の単語は絶対に使用しないでください: {', '.join(filter_words[:10])}...
+- 上記の禁止単語を含まない、全く新しい名前を考えてください
+- カクテルのコンセプトや色から連想される、詩的で魅力的な名前にしてください
+- 日本語でお願いします
+- 回答は名前のみ（説明や理由は不要）
+
+名前:"""
+    
+    try:
+        print(f"[DEBUG] 別プロンプトでAPI呼び出し開始")
+        result = generate_chat_completion_direct(prompt, temperature=0.9)
+        print(f"[DEBUG] API結果: {result.get('result', 'N/A')}")
+        if result["result"] == "success":
+            new_name = result["content"].strip().strip('"').strip('「').strip('」')
+            print(f"[DEBUG] 生成された候補名: {new_name}")
+            # 生成された名前も検証
+            if validate_cocktail_name(new_name, filter_words):
+                print(f"[DEBUG] 候補名が検証を通過: {new_name}")
+                return new_name
+            else:
+                print(f"[DEBUG] 候補名が検証に失敗: {new_name}")
+    except Exception as e:
+        print(f"[ERROR] 別プロンプトでの名前再生成エラー: {e}")
+    
+    return None

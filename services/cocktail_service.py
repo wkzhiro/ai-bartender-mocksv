@@ -11,7 +11,7 @@ from config.settings import settings
 from utils.text_utils import (
     load_syrup_info_txt, load_fusion_filter_words, validate_cocktail_name,
     build_recipe_system_prompt, extract_json_from_text, generate_order_id,
-    regenerate_cocktail_name_with_mini_llm
+    regenerate_cocktail_name_with_mini_llm, regenerate_name_with_alternative_prompt
 )
 from utils.image_utils import crop_and_resize_base64_image, upload_image_to_storage
 from db import database as dbmodule
@@ -150,23 +150,54 @@ class CocktailService:
             cocktail_name = recipe_data.get("cocktail_name", "")
             filter_words = load_fusion_filter_words()
             
-            if not validate_cocktail_name(cocktail_name, filter_words):
+            print(f"[DEBUG] 初期カクテル名: '{cocktail_name}'")
+            print(f"[DEBUG] フィルター単語数: {len(filter_words)}個")
+            print(f"[DEBUG] 初期検証実行中...")
+            
+            initial_validation = validate_cocktail_name(cocktail_name, filter_words)
+            print(f"[DEBUG] 初期検証結果: {initial_validation}")
+            
+            if not initial_validation:
                 print(f"[WARNING] カクテル名「{cocktail_name}」がフィルタに引っかかりました")
                 
-                # 再生成を試みる
+                # まず既存の簡易的な再生成を試みる
+                retry_success = False
                 for retry in range(settings.MAX_NAME_RETRIES):
+                    print(f"[DEBUG] 簡易再生成試行 {retry + 1}/{settings.MAX_NAME_RETRIES}")
                     new_name = regenerate_cocktail_name_with_mini_llm(recipe_data, filter_words)
-                    if new_name:
-                        print(f"[DEBUG] 新しいカクテル名: {new_name}")
+                    print(f"[DEBUG] 簡易再生成結果: {new_name}")
+                    if new_name and validate_cocktail_name(new_name, filter_words):
+                        print(f"[DEBUG] 簡易再生成成功: {new_name}")
                         recipe_data["cocktail_name"] = new_name
+                        retry_success = True
                         break
+                    else:
+                        print(f"[DEBUG] 簡易再生成失敗: {new_name} (検証結果: {validate_cocktail_name(new_name, filter_words) if new_name else 'None'})")
+                
+                if not retry_success:
+                    # 簡易的な再生成に失敗した場合、別のプロンプト戦略で再生成
+                    print(f"[INFO] 別のプロンプト戦略でカクテル名再生成を試みます")
+                    new_name = regenerate_name_with_alternative_prompt(
+                        recipe_data, filter_words, cocktail_name
+                    )
+                    if new_name:
+                        print(f"[DEBUG] 別プロンプトで新しいカクテル名生成成功: {new_name}")
+                        recipe_data["cocktail_name"] = new_name
+                    else:
+                        # それでも失敗した場合は、より創造的な汎用名を生成
+                        print(f"[WARNING] 別プロンプトでも失敗しました。最終手段として創造的汎用名を生成します。")
+                        timestamp = datetime.now().strftime("%H%M%S")
+                        # 汎用名パターンを回避するために、創造的な最終案を生成
+                        creative_fallback = f"今宵のインスピレーション{timestamp[-2:]}"
+                        recipe_data["cocktail_name"] = creative_fallback
+                        print(f"[WARNING] 全ての再生成失敗、創造的汎用名使用: {recipe_data['cocktail_name']}")
                 else:
-                    # 再生成に失敗した場合
-                    timestamp = datetime.now().strftime("%H%M%S")
-                    recipe_data["cocktail_name"] = f"特製カクテル{timestamp}"
-                    print(f"[WARNING] 再生成失敗、汎用名使用: {recipe_data['cocktail_name']}")
+                    print(f"[INFO] 簡易再生成でカクテル名決定完了")
+            else:
+                print(f"[INFO] 初期カクテル名が検証を通過: {cocktail_name}")
             
-            print(f"[DEBUG] レシピ生成完了 - name: {recipe_data['cocktail_name']}")
+            final_name = recipe_data.get('cocktail_name', 'Unknown')
+            print(f"[DEBUG] レシピ生成完了 - 最終カクテル名: '{final_name}'")
             return {"result": "success", "data": recipe_data}
             
         except Exception as e:

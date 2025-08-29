@@ -1,0 +1,535 @@
+[
+  {
+    "success": true,
+    "data": {
+      "result": "success",
+      "id": "62644016-e511-479f-baaf-a989fe0ef034",
+      "order_id": "503757",
+      "cocktail_name": "アイドル・シャンパンブリュレワルツ",
+      "concept": "多彩な経験と温かな感謝の心、推し活や創作の喜びを彩り豊かに表現。あなたの日常にエールを贈る特別な一杯。",
+      "color": {
+        "name": "アイドル・シャンパンブリュレ",
+        "description": "淡いベリーの赤と青りんごの爽やかさ、シトラスの輝きが絶妙に重なり、雲のようなホワイトが温かみを添えるパステルシャンパンカラー。",
+        "target_rgb": "RGB(154, 120, 57)"
+      },
+      "recipe": [
+        {
+          "syrup": "ベリー",
+          "ratio": "5%"
+        },
+        {
+          "syrup": "青りんご",
+          "ratio": "7%"
+        },
+        {
+          "syrup": "シトラス",
+          "ratio": "3%"
+        },
+        {
+          "syrup": "ホワイト",
+          "ratio": "10%"
+        }
+      ],
+      "image_base64": "",
+      "image_url": "https://zlhijsompozymqhjubdi.supabase.co/storage/v1/object/public/cocktail-images/cocktails/62644016-e511-479f-baaf-a989fe0ef034.png",
+      "detail": "",
+      "requires_copyright_confirmation": true
+    },
+    "participant_num": 1
+  },
+  {
+    "success": true,
+    "data": {
+      "result": "success",
+      "id": "14f5b8a0-e366-4821-815f-ca3156976244",
+      "order_id": "990230",
+      "cocktail_name": "煌めくドリーム",
+      "concept": "感謝の瞬間を鮮烈なベリーで彩り、未知へ挑む冒険心を青りんごで表現。社会へのまなざしとやさしさをホワイトで包み、日常の発見をシトラスで加えました。",
+      "color": {
+        "name": "トレイル・グリーンレッド",
+        "description": "森の深緑とベリーの鮮やかな赤が溶け合い、光差す小道のような透明感。社会や人とのつながり、感謝の気持ちを映す色合いです。",
+        "target_rgb": "RGB(124, 80, 38)"
+      },
+      "recipe": [
+        {
+          "syrup": "ベリー",
+          "ratio": "6%"
+        },
+        {
+          "syrup": "青りんご",
+          "ratio": "12%"
+        },
+        {
+          "syrup": "シトラス",
+          "ratio": "2%"
+        },
+        {
+          "syrup": "ホワイト",
+          "ratio": "5%"
+        }
+      ],
+      "image_base64": "",
+      "image_url": "https://zlhijsompozymqhjubdi.supabase.co/storage/v1/object/public/cocktail-images/cocktails/14f5b8a0-e366-4821-815f-ca3156976244.png",
+      "detail": "",
+      "requires_copyright_confirmation": true
+    },
+    "participant_num": 2
+  },
+  {
+    "success": true,
+    "data": {
+      "result": "success",
+      "id": "bc106d4b-451d-4911-95b7-0e6b2b121995",
+      "order_id": "735777",
+      "cocktail_name": "AIリフレクション",
+      "concept": "採用活動のAI化に着目し、目標達成の爽快感と人事としての経験、ドラマ一気見のリラックスを融合。変化と挑戦を応援する一杯です。",
+      "color": {
+        "name": "スマート・リフレッシュグリーン",
+        "description": "青りんごの知的なブルーグリーンに、ベリーの情熱とシトラスの活力がほのかに混じるクリアカラー。新時代の躍動感と落ち着きを表現。",
+        "target_rgb": "RGB(105, 110, 60)"
+      },
+      "recipe": [
+        {
+          "syrup": "ベリー",
+          "ratio": "4%"
+        },
+        {
+          "syrup": "青りんご",
+          "ratio": "13%"
+        },
+        {
+          "syrup": "シトラス",
+          "ratio": "5%"
+        },
+        {
+          "syrup": "ホワイト",
+          "ratio": "3%"
+        }
+      ],
+      "image_base64": "",
+      "image_url": "https://zlhijsompozymqhjubdi.supabase.co/storage/v1/object/public/cocktail-images/cocktails/bc106d4b-451d-4911-95b7-0e6b2b121995.png",
+      "detail": "",
+      "requires_copyright_confirmation": true
+    },
+    "participant_num": 3
+  },
+  {
+    "success": true,
+    "data": {
+      "result": "success",
+      "id": "5d5af7d9-31e3-44cb-941a-2f758f4427c1",
+      "order_id": "823254",
+      "cocktail_name": "森の夕暮れグリーンミスト",
+      "concept": "人との繋がりへの感謝、自然やアウトドアの冒険心、好奇心をベリーと青りんごで爽やかに表現。森で過ごす温かいひとときをイメージしました。",
+      "color": {
+        "name": "森の夕暮れグリーン",
+        "description": "森を包む夕暮れの赤みと木々の青緑が重なり合う、透明感ある優しいグラデーション。",
+        "target_rgb": "RGB(122, 80, 48)"
+      },
+      "recipe": [
+        {
+          "syrup": "ベリー",
+          "ratio": "7%"
+        },
+        {
+          "syrup": "青りんご",
+          "ratio": "10%"
+        },
+        {
+          "syrup": "シトラス",
+          "ratio": "3%"
+        },
+        {
+          "syrup": "ホワイト",
+          "ratio": "5%"
+        }
+      ],
+      "image_base64": "",
+      "image_url": "https://zlhijsompozymqhjubdi.supabase.co/storage/v1/object/public/cocktail-images/cocktails/5d5af7d9-31e3-44cb-941a-2f758f4427c1.png",
+      "detail": "",
+      "requires_copyright_confirmation": true
+    },
+    "participant_num": 4
+  },
+  {
+    "success": true,
+    "data": {
+      "result": "success",
+      "id": "4cbc2171-a63e-4d9a-8bdc-eaba1029ea61",
+      "order_id": "662524",
+      "cocktail_name": "風のドリーム",
+      "concept": "多様な経験と新しい発見への好奇心、自然と都会を行き来する日々を、爽やかなシトラスとホワイトの奥深さで表現しました。",
+      "color": {
+        "name": "シトラス・ミスティグリーン",
+        "description": "透き通るシトラスイエローに青りんごの落ち着きとホワイトの柔らかな霧が混ざり合う、発見と調和の色合い",
+        "target_rgb": "RGB(156, 143, 58)"
+      },
+      "recipe": [
+        {
+          "syrup": "ベリー",
+          "ratio": "2%"
+        },
+        {
+          "syrup": "青りんご",
+          "ratio": "8%"
+        },
+        {
+          "syrup": "シトラス",
+          "ratio": "5%"
+        },
+        {
+          "syrup": "ホワイト",
+          "ratio": "10%"
+        }
+      ],
+      "image_base64": "",
+      "image_url": "https://zlhijsompozymqhjubdi.supabase.co/storage/v1/object/public/cocktail-images/cocktails/4cbc2171-a63e-4d9a-8bdc-eaba1029ea61.png",
+      "detail": "",
+      "requires_copyright_confirmation": true
+    },
+    "participant_num": 5
+  },
+  {
+    "success": true,
+    "data": {
+      "result": "success",
+      "id": "4069b33d-7150-4b57-a75e-d7f1311178db",
+      "order_id": "915776",
+      "cocktail_name": "インスパイアド・グリーンイエローミスト",
+      "concept": "新しい発見と変化への好奇心、ボードゲームや野球のワクワク感、そして社会の動きを見つめる知的なひとときをイメージしました。",
+      "color": {
+        "name": "インスパイアド・グリーンイエロー",
+        "description": "青りんごとシトラスが織りなす爽快な黄緑色に、ベリーの赤がアクセント。知的な興奮と遊び心が共存するカラー。",
+        "target_rgb": "RGB(130, 160, 48)"
+      },
+      "recipe": [
+        {
+          "syrup": "ベリー",
+          "ratio": "2%"
+        },
+        {
+          "syrup": "青りんご",
+          "ratio": "13%"
+        },
+        {
+          "syrup": "シトラス",
+          "ratio": "7%"
+        },
+        {
+          "syrup": "ホワイト",
+          "ratio": "3%"
+        }
+      ],
+      "image_base64": "",
+      "image_url": "https://zlhijsompozymqhjubdi.supabase.co/storage/v1/object/public/cocktail-images/cocktails/4069b33d-7150-4b57-a75e-d7f1311178db.png",
+      "detail": "",
+      "requires_copyright_confirmation": true
+    },
+    "participant_num": 6
+  },
+  {
+    "success": true,
+    "data": {
+      "result": "success",
+      "id": "90dfa33d-1a1f-4df5-bb40-b4c54e5e66f3",
+      "order_id": "300815",
+      "cocktail_name": "スマート・バレエ・トラベラー",
+      "concept": "未来志向のプロジェクトに挑戦し、目標達成の喜びを味わうあなたへ。バレエの優雅さと海外旅行の刺激を一杯に込めて、知性と冒険心を讃えます。",
+      "color": {
+        "name": "グローバルシティ・グリーンティー",
+        "description": "スマートシティの発展と自然調和をイメージした落ち着きある青りんごとホワイトのグラデーション。透明感の中に知性と柔らかさが宿る色合いです。",
+        "target_rgb": "RGB(132, 124, 120)"
+      },
+      "recipe": [
+        {
+          "syrup": "ベリー",
+          "ratio": "3%"
+        },
+        {
+          "syrup": "青りんご",
+          "ratio": "12%"
+        },
+        {
+          "syrup": "シトラス",
+          "ratio": "0%"
+        },
+        {
+          "syrup": "ホワイト",
+          "ratio": "10%"
+        }
+      ],
+      "image_base64": "",
+      "image_url": "https://zlhijsompozymqhjubdi.supabase.co/storage/v1/object/public/cocktail-images/cocktails/90dfa33d-1a1f-4df5-bb40-b4c54e5e66f3.png",
+      "detail": "",
+      "requires_copyright_confirmation": true
+    },
+    "participant_num": 7
+  },
+  {
+    "success": true,
+    "data": {
+      "result": "success",
+      "id": "84a42e81-e36b-43cb-9007-4b3875e4cfcf",
+      "order_id": "145063",
+      "cocktail_name": "インスパイア・クラウドベリー",
+      "concept": "新しい発見へのワクワクと、AI時代の広がる未来への期待を、ベリーの華やかさとシトラスの刺激で表現しました。エンジニアとしての知的好奇心と、食を楽しむ遊び心を一杯に込めて。",
+      "color": {
+        "name": "フューチャー・ライムベリー",
+        "description": "青りんごの爽やかなグリーンに、ベリーの情熱的なレッドが溶け合い、シトラスのイエローがきらめく。希望に満ちた若々しいニュアンス。",
+        "target_rgb": "RGB(112, 90, 40)"
+      },
+      "recipe": [
+        {
+          "syrup": "ベリー",
+          "ratio": "6%"
+        },
+        {
+          "syrup": "青りんご",
+          "ratio": "10%"
+        },
+        {
+          "syrup": "シトラス",
+          "ratio": "6%"
+        },
+        {
+          "syrup": "ホワイト",
+          "ratio": "3%"
+        }
+      ],
+      "image_base64": "",
+      "image_url": "https://zlhijsompozymqhjubdi.supabase.co/storage/v1/object/public/cocktail-images/cocktails/84a42e81-e36b-43cb-9007-4b3875e4cfcf.png",
+      "detail": "",
+      "requires_copyright_confirmation": true
+    },
+    "participant_num": 8
+  },
+  {
+    "success": true,
+    "data": {
+      "result": "success",
+      "id": "ba4b593b-1e13-4a0d-929f-5f3916e2f957",
+      "order_id": "881073",
+      "cocktail_name": "輝くドリーム",
+      "concept": "忙しさの中にある感謝と癒し。教職員の多忙や社会の変化に寄り添い、映画や散歩、サウナでリフレッシュする瞬間を一杯に込めました。",
+      "color": {
+        "name": "リフレッシュグリーン・ホワイト",
+        "description": "透明感のある青りんごのグリーンと、ホワイトのやさしい濁りが重なる爽やかで癒しの色合い。新しい始まりと安心感を表現。",
+        "target_rgb": "RGB(128, 137, 145)"
+      },
+      "recipe": [
+        {
+          "syrup": "ベリー",
+          "ratio": "3%"
+        },
+        {
+          "syrup": "青りんご",
+          "ratio": "12%"
+        },
+        {
+          "syrup": "シトラス",
+          "ratio": "4%"
+        },
+        {
+          "syrup": "ホワイト",
+          "ratio": "6%"
+        }
+      ],
+      "image_base64": "",
+      "image_url": "https://zlhijsompozymqhjubdi.supabase.co/storage/v1/object/public/cocktail-images/cocktails/ba4b593b-1e13-4a0d-929f-5f3916e2f957.png",
+      "detail": "",
+      "requires_copyright_confirmation": true
+    },
+    "participant_num": 9
+  },
+  {
+    "success": true,
+    "data": {
+      "result": "success",
+      "id": "f7b1f580-79ac-4f57-b0b5-849c755fc1e3",
+      "order_id": "712101",
+      "cocktail_name": "輝くブレンド",
+      "concept": "自然への驚きと新しい発見の歓びを、鮮やかな色彩と奥深い味わいで表現。異常気象の不安と情熱的なフラメンコの融合が心に響く一杯。",
+      "color": {
+        "name": "エナジーレッド・グリーン",
+        "description": "躍動感のあるベリーの赤に、青りんごの緑が調和。フラメンコの情熱と自然の力強さを表現した透明感あるカラー。",
+        "target_rgb": "RGB(140, 80, 40)"
+      },
+      "recipe": [
+        {
+          "syrup": "ベリー",
+          "ratio": "8%"
+        },
+        {
+          "syrup": "青りんご",
+          "ratio": "10%"
+        },
+        {
+          "syrup": "シトラス",
+          "ratio": "2%"
+        },
+        {
+          "syrup": "ホワイト",
+          "ratio": "5%"
+        }
+      ],
+      "image_base64": "",
+      "image_url": "https://zlhijsompozymqhjubdi.supabase.co/storage/v1/object/public/cocktail-images/cocktails/f7b1f580-79ac-4f57-b0b5-849c755fc1e3.png",
+      "detail": "",
+      "requires_copyright_confirmation": true
+    },
+    "participant_num": 10
+  },
+  {
+    "success": true,
+    "data": {
+      "result": "error",
+      "id": "",
+      "order_id": "",
+      "cocktail_name": "",
+      "concept": "",
+      "color": "",
+      "recipe": [],
+      "image_base64": "",
+      "image_url": "",
+      "detail": "OpenAI API通信タイムアウト（30秒）",
+      "requires_copyright_confirmation": true
+    },
+    "participant_num": 11
+  },
+  {
+    "success": true,
+    "data": {
+      "result": "error",
+      "id": "",
+      "order_id": "",
+      "cocktail_name": "",
+      "concept": "",
+      "color": "",
+      "recipe": [],
+      "image_base64": "",
+      "image_url": "",
+      "detail": "OpenAI API通信例外: HTTPSConnectionPool(host='openai-shuffle.openai.azure.com', port=443): Max retries exceeded with url: /openai/deployments/gpt-4.1/chat/completions?api-version=2023-12-01-preview (Caused by NameResolutionError(\"<urllib3.connection.HTTPSConnection object at 0x10a84f4d0>: Failed to resolve 'openai-shuffle.openai.azure.com' ([Errno 8] nodename nor servname provided, or not known)\"))",
+      "requires_copyright_confirmation": true
+    },
+    "participant_num": 12
+  },
+  {
+    "success": true,
+    "data": {
+      "result": "error",
+      "id": "",
+      "order_id": "",
+      "cocktail_name": "",
+      "concept": "",
+      "color": "",
+      "recipe": [],
+      "image_base64": "",
+      "image_url": "",
+      "detail": "OpenAI API通信例外: HTTPSConnectionPool(host='openai-shuffle.openai.azure.com', port=443): Max retries exceeded with url: /openai/deployments/gpt-4.1/chat/completions?api-version=2023-12-01-preview (Caused by NameResolutionError(\"<urllib3.connection.HTTPSConnection object at 0x10a84fd90>: Failed to resolve 'openai-shuffle.openai.azure.com' ([Errno 8] nodename nor servname provided, or not known)\"))",
+      "requires_copyright_confirmation": true
+    },
+    "participant_num": 13
+  },
+  {
+    "success": true,
+    "data": {
+      "result": "error",
+      "id": "",
+      "order_id": "",
+      "cocktail_name": "",
+      "concept": "",
+      "color": "",
+      "recipe": [],
+      "image_base64": "",
+      "image_url": "",
+      "detail": "OpenAI API通信例外: HTTPSConnectionPool(host='openai-shuffle.openai.azure.com', port=443): Max retries exceeded with url: /openai/deployments/gpt-4.1/chat/completions?api-version=2023-12-01-preview (Caused by NameResolutionError(\"<urllib3.connection.HTTPSConnection object at 0x10ad0ccd0>: Failed to resolve 'openai-shuffle.openai.azure.com' ([Errno 8] nodename nor servname provided, or not known)\"))",
+      "requires_copyright_confirmation": true
+    },
+    "participant_num": 14
+  },
+  {
+    "success": true,
+    "data": {
+      "result": "error",
+      "id": "",
+      "order_id": "",
+      "cocktail_name": "",
+      "concept": "",
+      "color": "",
+      "recipe": [],
+      "image_base64": "",
+      "image_url": "",
+      "detail": "OpenAI API通信例外: HTTPSConnectionPool(host='openai-shuffle.openai.azure.com', port=443): Max retries exceeded with url: /openai/deployments/gpt-4.1/chat/completions?api-version=2023-12-01-preview (Caused by NameResolutionError(\"<urllib3.connection.HTTPSConnection object at 0x10a80bed0>: Failed to resolve 'openai-shuffle.openai.azure.com' ([Errno 8] nodename nor servname provided, or not known)\"))",
+      "requires_copyright_confirmation": true
+    },
+    "participant_num": 15
+  },
+  {
+    "success": true,
+    "data": {
+      "result": "error",
+      "id": "",
+      "order_id": "",
+      "cocktail_name": "",
+      "concept": "",
+      "color": "",
+      "recipe": [],
+      "image_base64": "",
+      "image_url": "",
+      "detail": "OpenAI API通信例外: HTTPSConnectionPool(host='openai-shuffle.openai.azure.com', port=443): Max retries exceeded with url: /openai/deployments/gpt-4.1/chat/completions?api-version=2023-12-01-preview (Caused by NameResolutionError(\"<urllib3.connection.HTTPSConnection object at 0x10a84dbd0>: Failed to resolve 'openai-shuffle.openai.azure.com' ([Errno 8] nodename nor servname provided, or not known)\"))",
+      "requires_copyright_confirmation": true
+    },
+    "participant_num": 16
+  },
+  {
+    "success": true,
+    "data": {
+      "result": "error",
+      "id": "",
+      "order_id": "",
+      "cocktail_name": "",
+      "concept": "",
+      "color": "",
+      "recipe": [],
+      "image_base64": "",
+      "image_url": "",
+      "detail": "OpenAI API通信例外: HTTPSConnectionPool(host='openai-shuffle.openai.azure.com', port=443): Max retries exceeded with url: /openai/deployments/gpt-4.1/chat/completions?api-version=2023-12-01-preview (Caused by NameResolutionError(\"<urllib3.connection.HTTPSConnection object at 0x10a84f750>: Failed to resolve 'openai-shuffle.openai.azure.com' ([Errno 8] nodename nor servname provided, or not known)\"))",
+      "requires_copyright_confirmation": true
+    },
+    "participant_num": 17
+  },
+  {
+    "success": true,
+    "data": {
+      "result": "error",
+      "id": "",
+      "order_id": "",
+      "cocktail_name": "",
+      "concept": "",
+      "color": "",
+      "recipe": [],
+      "image_base64": "",
+      "image_url": "",
+      "detail": "OpenAI API通信例外: HTTPSConnectionPool(host='openai-shuffle.openai.azure.com', port=443): Max retries exceeded with url: /openai/deployments/gpt-4.1/chat/completions?api-version=2023-12-01-preview (Caused by NameResolutionError(\"<urllib3.connection.HTTPSConnection object at 0x10a84e350>: Failed to resolve 'openai-shuffle.openai.azure.com' ([Errno 8] nodename nor servname provided, or not known)\"))",
+      "requires_copyright_confirmation": true
+    },
+    "participant_num": 18
+  },
+  {
+    "success": true,
+    "data": {
+      "result": "error",
+      "id": "",
+      "order_id": "",
+      "cocktail_name": "",
+      "concept": "",
+      "color": "",
+      "recipe": [],
+      "image_base64": "",
+      "image_url": "",
+      "detail": "OpenAI API通信例外: HTTPSConnectionPool(host='openai-shuffle.openai.azure.com', port=443): Max retries exceeded with url: /openai/deployments/gpt-4.1/chat/completions?api-version=2023-12-01-preview (Caused by NameResolutionError(\"<urllib3.connection.HTTPSConnection object at 0x10ad0ce10>: Failed to resolve 'openai-shuffle.openai.azure.com' ([Errno 8] nodename nor servname provided, or not known)\"))",
+      "requires_copyright_confirmation": true
+    },
+    "participant_num": 19
+  }
+]

@@ -37,6 +37,7 @@ async def lifespan(app: FastAPI):
     print("🔍 環境変数詳細:")
     print(f"  - AZURE_OPENAI_API_KEY_LLM: {'設定済み' if settings.AZURE_OPENAI_API_KEY_LLM else '未設定'}")
     print(f"  - AZURE_OPENAI_ENDPOINT_LLM: {'設定済み' if settings.AZURE_OPENAI_ENDPOINT_LLM else '未設定'}")
+    print(f"  - AZURE_OPENAI_ENDPOINT_LLM_MINI: {'設定済み' if settings.AZURE_OPENAI_ENDPOINT_LLM_MINI else '未設定'}")
     print(f"  - GPT_API_KEY: {'設定済み' if settings.GPT_API_KEY else '未設定'}")
     print(f"  - OPENAI_API_KEY: {'設定済み' if settings.OPENAI_API_KEY else '未設定'}")
     
