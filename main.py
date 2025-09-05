@@ -167,9 +167,13 @@ async def get_order_legacy(
                 result.append(cocktail_info)
             
             print(f"[DEBUG] 最終レスポンス件数: {len(result)}")
+            print(f"[DEBUG] ページネーション情報: total_count={cocktail_data.get('total_count')}, has_next={cocktail_data.get('has_next')}, has_prev={cocktail_data.get('has_prev')}")
+            
             return {
                 "data": result, 
-                "total": cocktail_data.get('total', len(result)),
+                "total_count": cocktail_data.get('total_count', len(result)),  # total → total_count に変更
+                "has_next": cocktail_data.get('has_next', False),  # has_next を追加
+                "has_prev": cocktail_data.get('has_prev', False),  # has_prev を追加
                 "limit": limit,
                 "offset": offset
             }
